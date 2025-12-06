@@ -17,8 +17,8 @@ interface ServiceGroupProps {
   checkIns: CheckInData[];
   onCheckOut: (securityCode: string) => void;
   onCheckIn: (securityCode: string) => void;
-  onDismiss: (securityCode: string) => void;
-  onRollOver: (securityCode: string) => void;
+  onDismiss: (securityCode: string, serviceName?: string) => void;
+  onRollOver: (securityCode: string, serviceName?: string) => void;
   showCheckOutButtons?: boolean; // Control visibility of check-out buttons
 }
 
@@ -380,8 +380,8 @@ export default function ServiceGroup({ serviceName, checkIns, onCheckOut, onChec
                           familyName={family.familyName}
                           securityCode={family.securityCode}
                           onCheckOut={() => onCheckOut(family.securityCode)}
-                          onDismiss={() => onDismiss(family.securityCode)}
-                          onRollOver={() => onRollOver(family.securityCode)}
+                          onDismiss={() => onDismiss(family.securityCode, serviceName)}
+                          onRollOver={() => onRollOver(family.securityCode, serviceName)}
                         />
                       </td>
                     </tr>
@@ -457,8 +457,8 @@ export default function ServiceGroup({ serviceName, checkIns, onCheckOut, onChec
                           familyName={family.familyName}
                           securityCode={family.securityCode}
                           onCheckOut={() => onCheckOut(family.securityCode)}
-                          onDismiss={() => onDismiss(family.securityCode)}
-                          onRollOver={() => onRollOver(family.securityCode)}
+                          onDismiss={() => onDismiss(family.securityCode, serviceName)}
+                          onRollOver={() => onRollOver(family.securityCode, serviceName)}
                         />
                       </td>
                     </tr>
@@ -642,8 +642,8 @@ export default function ServiceGroup({ serviceName, checkIns, onCheckOut, onChec
                       familyName={family.familyName}
                       securityCode={family.securityCode}
                       onCheckOut={() => onCheckOut(family.securityCode)}
-                      onDismiss={() => onDismiss(family.securityCode)}
-                      onRollOver={() => onRollOver(family.securityCode)}
+                      onDismiss={() => onDismiss(family.securityCode, serviceName)}
+                      onRollOver={() => onRollOver(family.securityCode, serviceName)}
                     />
                   </div>
                 </div>
@@ -771,8 +771,8 @@ export default function ServiceGroup({ serviceName, checkIns, onCheckOut, onChec
                       familyName={family.familyName}
                       securityCode={family.securityCode}
                       onCheckOut={() => onCheckOut(family.securityCode)}
-                      onDismiss={() => onDismiss(family.securityCode)}
-                      onRollOver={() => onRollOver(family.securityCode)}
+                      onDismiss={() => onDismiss(family.securityCode, serviceName)}
+                      onRollOver={() => onRollOver(family.securityCode, serviceName)}
                     />
                   </div>
                 </div>

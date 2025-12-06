@@ -44,6 +44,12 @@ interface PCOCheckIn {
         id: string;
       };
     };
+    event_time?: {
+      data?: {
+        type: "EventTime";
+        id: string;
+      };
+    };
     person?: {
       data?: {
         type: "Person";
@@ -143,9 +149,33 @@ interface PCOStation {
   };
 }
 
+interface PCOEventTime {
+  type: "EventTime";
+  id: string;
+  attributes: {
+    starts_at: string;
+    ends_at: string;
+    name?: string;
+  };
+  relationships?: {
+    event_period?: {
+      data?: {
+        type: "EventPeriod";
+        id: string;
+      };
+    };
+    event_location?: {
+      data?: {
+        type: "EventLocation";
+        id: string;
+      };
+    };
+  };
+}
+
 interface PCOApiResponse {
   data: PCOCheckIn[];
-  included?: (PCOEventPeriod | PCOEvent | PCOLocation | PCOEventLocation | PCOPerson | PCOStation)[];
+  included?: (PCOEventPeriod | PCOEventTime | PCOEvent | PCOLocation | PCOEventLocation | PCOPerson | PCOStation)[];
   meta?: {
     total_count: number;
     count: number;
@@ -174,24 +204,33 @@ export async function getLiveCheckIns(): Promise<CheckInData[]> {
   const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
 
   try {
-    // Fetch check-ins from today with related data
-    const today = new Date().toISOString().split('T')[0];
+    // Fetch check-ins from the last 7 days to ensure we get data
+    // This helps if there are no check-ins today but there were recent ones
+    const today = new Date();
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(today.getDate() - 7);
+    const dateFrom = sevenDaysAgo.toISOString().split('T')[0];
+    const dateTo = today.toISOString().split('T')[0];
+    
+    console.log('📅 Date range:', { from: dateFrom, to: dateTo, today: dateTo });
     
     // Planning Center API includes - as specified
     // Include: event, event_period, location (campus), station (check-in devices), person, event_location (classrooms)
+    // NOTE: event_times is plural (the only plural in the includes) - this is required by Planning Center API
     const includeParams = [
       'event',
       'event_period',
+      'event_times', // PLURAL - this is the only plural in all includes
       'location',
       'station',
       'person',
       'event_location' // Classrooms
     ].join(',');
     
-    const url = `https://api.planningcenteronline.com/check-ins/v2/check_ins?filter=created_at&where[created_at][gte]=${today}&include=${includeParams}&per_page=100`;
+    const url = `https://api.planningcenteronline.com/check-ins/v2/check_ins?filter=created_at&where[created_at][gte]=${dateFrom}&include=${includeParams}&per_page=100`;
     
-    console.log('🌐 PCO API URL:', url);
-    console.log('📅 Date filter:', today);
+    console.log('�� PCO API URL:', url);
+    console.log('📅 Date filter (last 7 days):', dateFrom, 'to', dateTo);
 
     let response = await fetch(url, {
       method: 'GET',
@@ -215,7 +254,7 @@ export async function getLiveCheckIns(): Promise<CheckInData[]> {
         'event_location' // Classrooms
       ].join(',');
       
-      const simpleUrl = `https://api.planningcenteronline.com/check-ins/v2/check_ins?filter=created_at&where[created_at][gte]=${today}&include=${simpleIncludeParams}&per_page=100`;
+      const simpleUrl = `https://api.planningcenteronline.com/check-ins/v2/check_ins?filter=created_at&where[created_at][gte]=${dateFrom}&include=${simpleIncludeParams}&per_page=100`;
       console.log('🔄 Retrying with simplified URL:', simpleUrl);
       
       response = await fetch(simpleUrl, {
@@ -254,7 +293,8 @@ export async function getLiveCheckIns(): Promise<CheckInData[]> {
 
     const data: PCOApiResponse = await response.json();
 
-    // Log the FULL initial API response to understand structure
+    // CRITICAL: Log immediately to verify we're processing the response
+    console.log('🚨 STARTING EVENT_TIMES FETCH PROCESS...');
     console.log('📦 FULL Initial API Response:', {
       totalCheckIns: data.data?.length || 0,
       includedTypes: data.included?.map(item => item.type) || [],
@@ -266,12 +306,14 @@ export async function getLiveCheckIns(): Promise<CheckInData[]> {
         EventLocation: data.included?.filter(i => i.type === 'EventLocation').length || 0,
         Station: data.included?.filter(i => i.type === 'Station').length || 0,
         Person: data.included?.filter(i => i.type === 'Person').length || 0,
+        EventTime: data.included?.filter(i => i.type === 'EventTime').length || 0,
       },
       firstCheckIn: data.data?.[0] ? {
         id: data.data[0].id,
         relationships: Object.keys(data.data[0].relationships || {}),
         event_location_id: data.data[0].relationships?.event_location?.data?.id,
         event_period_id: data.data[0].relationships?.event_period?.data?.id,
+        event_time_id: data.data[0].relationships?.event_time?.data?.id,
         event_id: data.data[0].relationships?.event?.data?.id,
         station_id: data.data[0].relationships?.station?.data?.id,
       } : null,
@@ -340,7 +382,9 @@ export async function getLiveCheckIns(): Promise<CheckInData[]> {
       // Add to missing set if found but not included
       if (eventLocationId && !data.included?.find(item => item.type === 'EventLocation' && item.id === eventLocationId)) {
         missingEventLocationIds.add(eventLocationId);
-        console.log(`🚨 Missing EventLocation (classroom) ${eventLocationId} for check-in ${checkIn.id}`);
+        console.log(`🚨 Missing EventLocation (classroom) ${eventLocationId} for check-in ${checkIn.id} - WILL FETCH`);
+      } else if (eventLocationId) {
+        console.log(`✅ Check-in ${checkIn.id} has event_location ${eventLocationId} and it's already in included array`);
       }
 
       // Collect missing event IDs
@@ -458,14 +502,427 @@ export async function getLiveCheckIns(): Promise<CheckInData[]> {
       console.log(`🔍 Collected ${missingEventIds.size} event IDs for event_locations fetch`);
     }
 
-    // ALSO fetch event_periods with their event_location relationships
-    // CRITICAL: event_periods may have event_location relationships that link service times to classrooms
-    console.log('🔍 Fetching event_periods with event_location relationships...');
+    // CRITICAL: Fetch event_times separately since they're not being included in the initial response
+    // Planning Center support said to include event_times, but they're not coming through
+    // Try multiple approaches: from event_periods and from events
+    console.log('🚨🚨🚨 CRITICAL: Starting event_times fetch process...');
+    console.log('🔍 Fetching event_times separately since they were not included in initial response...');
+    console.log(`   Current event_times in response: ${data.included?.filter(item => item.type === 'EventTime').length || 0}`);
+    
+    // Collect unique event IDs and event_period IDs
+    const eventIds = new Set<string>();
     const eventPeriodIds = new Set<string>();
     data.data.forEach(checkIn => {
       const eventPeriodId = checkIn.relationships?.event_period?.data?.id;
       if (eventPeriodId) eventPeriodIds.add(eventPeriodId);
+      
+      const eventId = checkIn.relationships?.event?.data?.id;
+      if (eventId) eventIds.add(eventId);
     });
+    
+    // Also get event IDs from event_periods
+    data.included?.forEach(item => {
+      if (item.type === 'EventPeriod') {
+        const periodEventId = (item as any)?.relationships?.event?.data?.id;
+        if (periodEventId) eventIds.add(periodEventId);
+      }
+    });
+    
+    console.log(`📋 Found ${eventIds.size} unique events and ${eventPeriodIds.size} unique event_periods`);
+    
+    // Approach 1: Try fetching event_times from events
+    if (eventIds.size > 0) {
+      console.log(`📋 Attempting to fetch event_times from ${eventIds.size} events...`);
+      const eventTimePromisesFromEvents = Array.from(eventIds).map(async (eventId) => {
+        try {
+          // CRITICAL: Include event_location to get classroom assignments for each event_time
+          const eventTimesResponse = await fetch(
+            `https://api.planningcenteronline.com/check-ins/v2/events/${eventId}/event_times?include=event_location`,
+            {
+              method: 'GET',
+              headers: {
+                'Authorization': `Basic ${auth}`,
+                'Content-Type': 'application/json',
+              },
+              next: { revalidate: 30 },
+            }
+          );
+          
+          if (eventTimesResponse.ok) {
+            const eventTimesData = await eventTimesResponse.json();
+            console.log(`✅ Fetched event_times for event ${eventId}:`, {
+              hasData: !!eventTimesData.data,
+              dataLength: Array.isArray(eventTimesData.data) ? eventTimesData.data.length : (eventTimesData.data ? 1 : 0),
+              includedLength: eventTimesData.included?.length || 0
+            });
+            
+            const eventTimeItems = Array.isArray(eventTimesData.data) ? eventTimesData.data : (eventTimesData.data ? [eventTimesData.data] : []);
+            
+            eventTimeItems.forEach((eventTime: any) => {
+              if (eventTime.type === 'EventTime' && !data.included?.find(item => item.type === 'EventTime' && item.id === eventTime.id)) {
+                if (!data.included) data.included = [];
+                data.included.push(eventTime);
+                console.log(`✅ Added EventTime ${eventTime.id} (${eventTime.attributes?.starts_at ? new Date(eventTime.attributes.starts_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : 'no time'}) from event ${eventId}`);
+              }
+            });
+            
+            // Also add from included array (EventTimes and EventLocations)
+            if (eventTimesData.included) {
+              eventTimesData.included.forEach((item: any) => {
+                if (item.type === 'EventTime' && !data.included?.find(i => i.type === 'EventTime' && i.id === item.id)) {
+                  if (!data.included) data.included = [];
+                  data.included.push(item);
+                } else if (item.type === 'EventLocation' && !data.included?.find(i => i.type === 'EventLocation' && i.id === item.id)) {
+                  // CRITICAL: Add event_locations from included array
+                  if (!data.included) data.included = [];
+                  data.included.push(item);
+                  console.log(`✅ Added EventLocation ${item.id} (${item.attributes?.name || 'unnamed'}) from event_times included array`);
+                }
+              });
+            }
+          } else {
+            const errorText = await eventTimesResponse.text().catch(() => '');
+            console.warn(`⚠️ Failed to fetch event_times from event ${eventId}: ${eventTimesResponse.status} - ${errorText.substring(0, 100)}`);
+          }
+        } catch (e) {
+          console.error(`❌ Error fetching event_times from event ${eventId}:`, e);
+        }
+      });
+      
+      await Promise.all(eventTimePromisesFromEvents);
+    }
+    
+    // Approach 2: Try fetching event_times from event_periods (if Approach 1 didn't work)
+    if (eventPeriodIds.size > 0 && (data.included?.filter(item => item.type === 'EventTime').length || 0) === 0) {
+      console.log(`📋 Attempting to fetch event_times from ${eventPeriodIds.size} event_periods (fallback)...`);
+      const eventTimePromisesFromPeriods = Array.from(eventPeriodIds).map(async (eventPeriodId) => {
+        try {
+          // CRITICAL: Include event_location to get classroom assignments for each event_time
+          const eventTimesResponse = await fetch(
+            `https://api.planningcenteronline.com/check-ins/v2/event_periods/${eventPeriodId}/event_times?include=event_location`,
+            {
+              method: 'GET',
+              headers: {
+                'Authorization': `Basic ${auth}`,
+                'Content-Type': 'application/json',
+              },
+              next: { revalidate: 30 },
+            }
+          );
+          
+          if (eventTimesResponse.ok) {
+            const eventTimesData = await eventTimesResponse.json();
+            const eventTimeItems = Array.isArray(eventTimesData.data) ? eventTimesData.data : (eventTimesData.data ? [eventTimesData.data] : []);
+            
+            eventTimeItems.forEach((eventTime: any) => {
+              if (eventTime.type === 'EventTime' && !data.included?.find(item => item.type === 'EventTime' && item.id === eventTime.id)) {
+                if (!data.included) data.included = [];
+                data.included.push(eventTime);
+                console.log(`✅ Added EventTime ${eventTime.id} (${eventTime.attributes?.starts_at ? new Date(eventTime.attributes.starts_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : 'no time'}) from event_period ${eventPeriodId}`);
+              }
+            });
+            
+            // Also add from included array (EventTimes and EventLocations)
+            if (eventTimesData.included) {
+              eventTimesData.included.forEach((item: any) => {
+                if (item.type === 'EventTime' && !data.included?.find(i => i.type === 'EventTime' && i.id === item.id)) {
+                  if (!data.included) data.included = [];
+                  data.included.push(item);
+                } else if (item.type === 'EventLocation' && !data.included?.find(i => i.type === 'EventLocation' && i.id === item.id)) {
+                  // CRITICAL: Add event_locations from included array
+                  if (!data.included) data.included = [];
+                  data.included.push(item);
+                  console.log(`✅ Added EventLocation ${item.id} (${item.attributes?.name || 'unnamed'}) from event_period event_times included array`);
+                }
+              });
+            }
+          } else {
+            const errorText = await eventTimesResponse.text().catch(() => '');
+            console.warn(`⚠️ Failed to fetch event_times from event_period ${eventPeriodId}: ${eventTimesResponse.status} - ${errorText.substring(0, 100)}`);
+          }
+        } catch (e) {
+          console.error(`❌ Error fetching event_times from event_period ${eventPeriodId}:`, e);
+        }
+      });
+      
+      await Promise.all(eventTimePromisesFromPeriods);
+    }
+    
+    const finalEventTimeCount = data.included?.filter(item => item.type === 'EventTime').length || 0;
+    console.log(`✅ Finished fetching event_times. Total now: ${finalEventTimeCount}`);
+    
+    if (finalEventTimeCount === 0) {
+      console.error(`❌ CRITICAL: No event_times were fetched! This means service times will be incorrect.`);
+      console.error(`   Tried: /events/{id}/event_times and /event_periods/{id}/event_times`);
+      console.error(`   You may need to contact Planning Center support about the correct endpoint.`);
+    }
+    
+    // CRITICAL: Fetch each check-in individually to get its full relationships including event_location
+    // The initial API response might not include event_location relationships even when requested
+    // IMPORTANT: Include event_times to preserve that relationship, and merge instead of replace
+    console.log('🔍 Fetching individual check-ins to get event_location relationships...');
+    const checkInPromises = data.data.map(async (checkIn) => {
+      try {
+        // CRITICAL: Include location, event_location, AND event_times to preserve all relationships
+        // In Planning Center, classrooms are stored as "locations" within an event
+        const checkInResponse = await fetch(
+          `https://api.planningcenteronline.com/check-ins/v2/check_ins/${checkIn.id}?include=location,event_location,event_times`,
+          {
+            method: 'GET',
+            headers: {
+              'Authorization': `Basic ${auth}`,
+              'Content-Type': 'application/json',
+            },
+            next: { revalidate: 30 },
+          }
+        );
+        
+        if (checkInResponse.ok) {
+          const checkInData = await checkInResponse.json();
+          const fetchedCheckIn = checkInData.data;
+          
+          // CRITICAL: Log the full check-in response to see what Planning Center actually returns
+          console.log(`🔍 FULL CheckIn ${checkIn.id} individual fetch response:`, {
+            id: fetchedCheckIn.id,
+            type: fetchedCheckIn.type,
+            attributes: Object.keys(fetchedCheckIn.attributes || {}),
+            relationships: Object.keys(fetchedCheckIn.relationships || {}),
+            location_id: (fetchedCheckIn.relationships as any)?.location?.data?.id || 'none', // CRITICAL: Classrooms are locations
+            event_location_id: fetchedCheckIn.relationships?.event_location?.data?.id || 'none',
+            event_time_id: fetchedCheckIn.relationships?.event_time?.data?.id || 'none',
+            event_times_ids: (fetchedCheckIn.relationships as any)?.event_times?.data ? 
+              (Array.isArray((fetchedCheckIn.relationships as any).event_times.data) ? 
+                (fetchedCheckIn.relationships as any).event_times.data.map((d: any) => d.id) : 
+                [(fetchedCheckIn.relationships as any).event_times.data.id]) : 'none',
+            station_id: fetchedCheckIn.relationships?.station?.data?.id || 'none',
+            included_types: checkInData.included?.map((i: any) => i.type) || [],
+            included_locations: checkInData.included?.filter((i: any) => i.type === 'Location').map((i: any) => ({
+              id: i.id,
+              name: i.attributes?.name
+            })) || [],
+            included_event_locations: checkInData.included?.filter((i: any) => i.type === 'EventLocation').map((i: any) => ({
+              id: i.id,
+              name: i.attributes?.name
+            })) || []
+          });
+          
+          // CRITICAL: Merge relationships instead of replacing the entire check-in
+          // This preserves event_times from the original response if the individual fetch doesn't have it
+          const checkInIndex = data.data.findIndex(c => c.id === checkIn.id);
+          if (checkInIndex >= 0) {
+            const originalCheckIn = data.data[checkInIndex];
+            
+            // Merge relationships: use fetched relationships, but preserve original event_times if fetched doesn't have it
+            const mergedRelationships = {
+              ...originalCheckIn.relationships,
+              ...fetchedCheckIn.relationships,
+            };
+            
+            // If original had event_times but fetched doesn't, preserve it
+            if ((originalCheckIn.relationships as any)?.event_times && !(fetchedCheckIn.relationships as any)?.event_times) {
+              mergedRelationships.event_times = (originalCheckIn.relationships as any).event_times;
+            }
+            
+            // Update the check-in with merged relationships
+            data.data[checkInIndex] = {
+              ...fetchedCheckIn,
+              relationships: mergedRelationships,
+            };
+            
+            console.log(`✅ Merged CheckIn ${checkIn.id} relationships:`, {
+              original_relationships: Object.keys(originalCheckIn.relationships || {}),
+              fetched_relationships: Object.keys(fetchedCheckIn.relationships || {}),
+              merged_relationships: Object.keys(mergedRelationships),
+              preserved_event_times: !!(mergedRelationships as any)?.event_times
+            });
+            
+            // Add event_times from included array if present
+            if (checkInData.included) {
+              checkInData.included.forEach((item: any) => {
+                if (item.type === 'EventTime' && !data.included?.find(i => i.type === 'EventTime' && i.id === item.id)) {
+                  if (!data.included) data.included = [];
+                  data.included.push(item);
+                  console.log(`✅ Added EventTime ${item.id} from check-in ${checkIn.id} response`);
+                }
+                // Also add Locations (classrooms are locations in Planning Center)
+                else if (item.type === 'Location' && !data.included?.find(i => i.type === 'Location' && i.id === item.id)) {
+                  if (!data.included) data.included = [];
+                  data.included.push(item);
+                  console.log(`✅ Added Location ${item.id} (${item.attributes?.name || 'unnamed'}) from check-in ${checkIn.id} response`);
+                }
+              });
+            }
+            
+            // CRITICAL: Locations are nested under check-in as a sub-resource, not in relationships!
+            // Fetch locations from /check-ins/v2/check_ins/{id}/locations
+            try {
+              const locationsResponse = await fetch(
+                `https://api.planningcenteronline.com/check-ins/v2/check_ins/${checkIn.id}/locations`,
+                {
+                  method: 'GET',
+                  headers: {
+                    'Authorization': `Basic ${auth}`,
+                    'Content-Type': 'application/json',
+                  },
+                  next: { revalidate: 30 },
+                }
+              );
+              
+              if (locationsResponse.ok) {
+                const locationsData = await locationsResponse.json();
+                console.log(`✅ Fetched locations for CheckIn ${checkIn.id}:`, {
+                  hasData: !!locationsData.data,
+                  dataLength: Array.isArray(locationsData.data) ? locationsData.data.length : (locationsData.data ? 1 : 0),
+                  includedLength: locationsData.included?.length || 0
+                });
+                
+                // Process locations from data array
+                const locationItems = Array.isArray(locationsData.data) ? locationsData.data : (locationsData.data ? [locationsData.data] : []);
+                
+                // CRITICAL: Use the first location as the classroom assignment
+                const firstLocation = locationItems.find((loc: any) => loc.type === 'Location');
+                
+                if (firstLocation) {
+                  const location = firstLocation;
+                  console.log(`🏫 Found classroom location for CheckIn ${checkIn.id}: ${location.id} (${location.attributes?.name || 'unnamed'})`);
+                  
+                  // CRITICAL: Store the location ID on the check-in for later matching
+                  // Update the merged check-in with the location relationship
+                  if (checkInIndex >= 0) {
+                    const currentCheckIn = data.data[checkInIndex];
+                    if (!(currentCheckIn.relationships as any)) {
+                      (currentCheckIn.relationships as any) = {};
+                    }
+                    // Always update the location relationship (in case it changed)
+                    (currentCheckIn.relationships as any).location = { data: { type: 'Location', id: location.id } };
+                    console.log(`✅ Stored location relationship ${location.id} (${location.attributes?.name}) on CheckIn ${checkIn.id} for classroom assignment`);
+                  }
+                  
+                  // CRITICAL: Add to included array so transformPCOData can find it
+                  // The maps (locationsMap, eventLocationsMap) are created in transformPCOData from the included array
+                  if (!data.included?.find(item => item.type === 'Location' && item.id === location.id)) {
+                    if (!data.included) data.included = [];
+                    data.included.push(location);
+                    console.log(`✅ Added Location ${location.id} (${location.attributes?.name}) to included array for transformPCOData`);
+                  }
+                } else {
+                  console.warn(`⚠️ No Location found in locations response for CheckIn ${checkIn.id}`);
+                }
+                
+                // Also process any additional locations from the response (for completeness)
+                locationItems.forEach((location: any) => {
+                  if (location.type === 'Location' && location.id !== firstLocation?.id) {
+                    // Add to included array but don't assign as classroom (first location is the classroom)
+                    if (!data.included?.find(item => item.type === 'Location' && item.id === location.id)) {
+                      if (!data.included) data.included = [];
+                      data.included.push(location);
+                    }
+                  }
+                });
+                
+                // Process locations from included array
+                if (locationsData.included) {
+                  locationsData.included.forEach((item: any) => {
+                    if (item.type === 'Location' && !data.included?.find(i => i.type === 'Location' && i.id === item.id)) {
+                      if (!data.included) data.included = [];
+                      data.included.push(item);
+                      if (!locationsMap.has(item.id)) {
+                        locationsMap.set(item.id, item);
+                      }
+                    }
+                  });
+                }
+              } else {
+                const errorText = await locationsResponse.text().catch(() => '');
+                console.warn(`⚠️ Failed to fetch locations for CheckIn ${checkIn.id}: ${locationsResponse.status} - ${errorText.substring(0, 200)}`);
+              }
+            } catch (e) {
+              console.error(`❌ Error fetching locations for CheckIn ${checkIn.id}:`, e);
+            }
+            
+            // Check for location relationship first (classrooms are locations in Planning Center)
+            const checkInLocationId = (fetchedCheckIn.relationships as any)?.location?.data?.id;
+            if (checkInLocationId) {
+              console.log(`✅ CheckIn ${checkIn.id} has location ${checkInLocationId} - found via individual fetch (classroom assignment)`);
+            }
+            
+            // Log if we found an event_location relationship
+            const eventLocationId = fetchedCheckIn.relationships?.event_location?.data?.id;
+            if (eventLocationId) {
+              console.log(`✅ CheckIn ${checkIn.id} has event_location ${eventLocationId} - found via individual fetch`);
+              
+              // Add event_location to included array if not already there
+              if (!data.included?.find(item => item.type === 'EventLocation' && item.id === eventLocationId)) {
+                // Try to get it from the check-in response's included array
+                if (checkInData.included) {
+                  const eventLocation = checkInData.included.find((item: any) => item.type === 'EventLocation' && item.id === eventLocationId);
+                  if (eventLocation) {
+                    if (!data.included) data.included = [];
+                    data.included.push(eventLocation);
+                    console.log(`✅ Added EventLocation ${eventLocationId} (${eventLocation.attributes?.name || 'unnamed'}) from check-in ${checkIn.id} response`);
+                  } else {
+                    // Fetch it separately
+                    missingEventLocationIds.add(eventLocationId);
+                  }
+                } else {
+                  missingEventLocationIds.add(eventLocationId);
+                }
+              }
+            } else {
+              console.log(`⚠️ CheckIn ${checkIn.id} still has NO event_location relationship after individual fetch`);
+            }
+          }
+        } else {
+          const errorText = await checkInResponse.text().catch(() => '');
+          console.warn(`⚠️ Failed to fetch check-in ${checkIn.id}: ${checkInResponse.status} - ${errorText.substring(0, 200)}`);
+        }
+      } catch (e) {
+        console.error(`❌ Error fetching check-in ${checkIn.id}:`, e);
+      }
+    });
+    
+    await Promise.all(checkInPromises);
+    console.log(`✅ Finished fetching individual check-ins`);
+    
+    // Re-fetch any event_locations that were discovered from individual check-in fetches
+    if (missingEventLocationIds.size > 0) {
+      console.log(`🏫 Fetching ${missingEventLocationIds.size} additional EventLocation resources discovered from check-ins...`);
+      const additionalEventLocationPromises = Array.from(missingEventLocationIds).map(async (eventLocationId) => {
+        // Only fetch if not already in included array
+        if (!data.included?.find(item => item.type === 'EventLocation' && item.id === eventLocationId)) {
+          try {
+            const eventLocationResponse = await fetch(
+              `https://api.planningcenteronline.com/check-ins/v2/event_locations/${eventLocationId}`,
+              {
+                method: 'GET',
+                headers: {
+                  'Authorization': `Basic ${auth}`,
+                  'Content-Type': 'application/json',
+                },
+                next: { revalidate: 30 },
+              }
+            );
+            
+            if (eventLocationResponse.ok) {
+              const eventLocationData = await eventLocationResponse.json();
+              if (eventLocationData.data && !data.included?.find(item => item.type === 'EventLocation' && item.id === eventLocationId)) {
+                if (!data.included) data.included = [];
+                data.included.push(eventLocationData.data);
+                console.log(`✅ Fetched EventLocation ${eventLocationId} (${eventLocationData.data.attributes?.name || 'unnamed'}) discovered from check-in`);
+              }
+            }
+          } catch (e) {
+            console.error(`❌ Error fetching EventLocation ${eventLocationId}:`, e);
+          }
+        }
+      });
+      
+      await Promise.all(additionalEventLocationPromises);
+    }
+    
+    // ALSO fetch event_periods with their event_location relationships
+    // CRITICAL: event_periods may have event_location relationships that link service times to classrooms
+    console.log('🔍 Fetching event_periods with event_location relationships...');
     
     if (eventPeriodIds.size > 0) {
       console.log(`📋 Fetching ${eventPeriodIds.size} event_periods to check for event_location relationships...`);
@@ -896,6 +1353,7 @@ function transformPCOData(pcoData: PCOApiResponse): CheckInData[] {
   const eventLocationsMap = new Map<string, PCOEventLocation>();
   const peopleMap = new Map<string, PCOPerson>();
   const stationsMap = new Map<string, PCOStation>();
+  const eventTimesMap = new Map<string, PCOEventTime>();
 
   included.forEach((item) => {
     if (item.type === 'EventPeriod') {
@@ -910,18 +1368,29 @@ function transformPCOData(pcoData: PCOApiResponse): CheckInData[] {
       peopleMap.set(item.id, item as PCOPerson);
     } else if (item.type === 'Station') {
       stationsMap.set(item.id, item as PCOStation);
+    } else if (item.type === 'EventTime') {
+      eventTimesMap.set(item.id, item as PCOEventTime);
     }
   });
 
   // Debug: Log lookup maps with detailed info
   console.log('📊 Lookup Maps (from included[]):', {
     eventPeriods: eventPeriodsMap.size,
+    eventTimes: eventTimesMap.size, // CRITICAL: Service times - THIS IS WHAT WE NEED FOR CORRECT TIMES
     events: eventsMap.size,
     locations: locationsMap.size, // Campus/physical locations
     eventLocations: eventLocationsMap.size, // Classrooms - THIS IS WHAT WE NEED FOR UI
     stations: stationsMap.size, // Check-in devices
     people: peopleMap.size,
     sampleEventPeriod: Array.from(eventPeriodsMap.values())[0],
+    sampleEventTime: Array.from(eventTimesMap.values())[0] || '⚠️ NO EVENTTIMES FOUND - THIS IS THE PROBLEM!',
+    // CRITICAL: Show all event_times found
+    allEventTimes: Array.from(eventTimesMap.entries()).map(([id, et]) => ({
+      id,
+      starts_at: et.attributes.starts_at,
+      parsedTime: new Date(et.attributes.starts_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+      event_location_id: (et as any).relationships?.event_location?.data?.id
+    })),
     sampleEvent: Array.from(eventsMap.values())[0],
     sampleLocation: Array.from(locationsMap.values())[0],
     sampleEventLocation: Array.from(eventLocationsMap.values())[0] || '⚠️ NO EVENTLOCATIONS FOUND',
@@ -1006,21 +1475,25 @@ function transformPCOData(pcoData: PCOApiResponse): CheckInData[] {
   // Log persons with multiple check-ins (should indicate multiple service times)
   checkInsByPerson.forEach((checkIns, personId) => {
     if (checkIns.length > 1) {
-      const eventPeriodIds = checkIns.map(c => c.relationships?.event_period?.data?.id).filter(Boolean);
+      const eventTimeIds = checkIns.map(c => c.relationships?.event_time?.data?.id).filter(Boolean);
       console.log(`✅ Person ${personId} has ${checkIns.length} check-ins (multiple service times):`, {
         checkInIds: checkIns.map(c => c.id),
-        eventPeriodIds,
-        serviceNames: checkIns.map(c => {
-          const epId = c.relationships?.event_period?.data?.id;
-          // Use included.find() for consistency with transformPCOData
-          const ep = included.find(i => i.id === epId && i.type === 'EventPeriod') as PCOEventPeriod | undefined;
-          return ep?.attributes?.starts_at || 'MISSING';
+        eventTimeIds,
+        serviceTimes: checkIns.map(c => {
+          const etId = c.relationships?.event_time?.data?.id;
+          // Use eventTimesMap for consistency
+          const et = etId ? (included.find(i => i.id === etId && i.type === 'EventTime') as PCOEventTime | undefined) : null;
+          return et?.attributes?.starts_at ? new Date(et.attributes.starts_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : 'MISSING';
         })
       });
     }
   });
 
-  return data.map((checkIn, index) => {
+  // CRITICAL: Process each check-in and create one record per event_time
+  // If a check-in has multiple event_times (multiple service times), create multiple records
+  const results: CheckInData[] = [];
+  
+  data.forEach((checkIn, index) => {
     // Critical relationships check - only log if missing
     const hasEventPeriod = !!checkIn.relationships?.event_period?.data?.id;
     const hasEventLocation = !!checkIn.relationships?.event_location?.data?.id;
@@ -1043,30 +1516,169 @@ function transformPCOData(pcoData: PCOApiResponse): CheckInData[] {
     const medicalNotes = person?.attributes.medical_notes || checkIn.attributes.medical_notes || '';
     const birthdate = person?.attributes.birthdate || checkIn.attributes.birthdate;
     
-    // CRITICAL: Get event_period directly from included array using relationship ID
-    // This ensures we get the correct event_period for this specific check-in
+    // Fallback to event_period if event_time is not available (for backwards compatibility)
     const eventPeriodId = checkIn.relationships?.event_period?.data?.id;
     const eventPeriod = eventPeriodId 
       ? (included.find(i => i.id === eventPeriodId && i.type === 'EventPeriod') as PCOEventPeriod | undefined)
       : null;
     
-    // CRITICAL DEBUG: Log event_period assignment for ALL check-ins to diagnose timing issues
+    // CRITICAL: Get all event_times for this check-in (may have multiple service times)
+    // Check for both singular and plural relationship names
+    let eventTimeIds: string[] = [];
+    
+    // First check for singular event_time
+    const singleEventTimeId = checkIn.relationships?.event_time?.data?.id;
+    if (singleEventTimeId) {
+      eventTimeIds = [singleEventTimeId];
+    }
+    
+    // Then check for event_times (plural) - might be returned as an array
+    if ((checkIn.relationships as any)?.event_times?.data) {
+      const eventTimesData = (checkIn.relationships as any).event_times.data;
+      if (Array.isArray(eventTimesData) && eventTimesData.length > 0) {
+        eventTimeIds = eventTimesData.map((et: any) => et.id);
+      } else if (eventTimesData && eventTimesData.id) {
+        eventTimeIds = [eventTimesData.id];
+      }
+    }
+    
+    // If no event_times found, we'll still create one record using fallback logic
+    // Use a special marker to indicate we need to use fallback
+    const needsFallback = eventTimeIds.length === 0;
+    if (needsFallback) {
+      eventTimeIds = ['__FALLBACK__']; // Use special marker to create one record with fallback
+    }
+    
+    console.log(`🔍 CheckIn ${checkIn.id} (${firstName} ${lastName}) has ${eventTimeIds.length} event_time(s):`, eventTimeIds);
+    
+    // Create one CheckInData record for each event_time
+    eventTimeIds.forEach((eventTimeId, eventTimeIndex) => {
+      // Skip fallback marker - we'll handle fallback logic below
+      const isFallback = eventTimeId === '__FALLBACK__';
+      let eventTime = (!isFallback && eventTimeId) ? eventTimesMap.get(eventTimeId) : null;
+      
+      // Get event_location from check-in to help with matching
+      const checkInEventLocationId = checkIn.relationships?.event_location?.data?.id;
+      
+      // CRITICAL FALLBACK: If check-in doesn't have event_time relationship, try to find it via event_period
+      // Since event_times belong to event_periods, we can find all event_times for this event_period
+      // and try to match based on the check-in's created_at time, event_location, or other criteria
+      if (!eventTime && eventPeriodId && eventTimesMap.size > 0) {
+      // Find all event_times that belong to this event_period
+      const eventTimesForPeriod = Array.from(eventTimesMap.values()).filter(et => {
+        const etPeriodId = (et as any)?.relationships?.event_period?.data?.id;
+        return etPeriodId === eventPeriodId;
+      });
+      
+      if (eventTimesForPeriod.length > 0) {
+        // If there's only one event_time for this period, use it
+        if (eventTimesForPeriod.length === 1) {
+          eventTime = eventTimesForPeriod[0];
+          eventTimeId = eventTime.id;
+          console.log(`✅ Matched CheckIn ${checkIn.id} to EventTime ${eventTimeId} (single event_time for period ${eventPeriodId})`);
+        } else {
+          // Multiple event_times - try to match by event_location first (most accurate)
+          let matchedEventTime: PCOEventTime | null = null;
+          
+          if (checkInEventLocationId) {
+            // Try to find event_time that matches the check-in's event_location
+            matchedEventTime = eventTimesForPeriod.find(et => {
+              const etLocationId = (et as any)?.relationships?.event_location?.data?.id;
+              return etLocationId === checkInEventLocationId;
+            }) || null;
+            
+            if (matchedEventTime) {
+              console.log(`✅ Matched CheckIn ${checkIn.id} to EventTime ${matchedEventTime.id} via event_location ${checkInEventLocationId}`);
+            }
+          }
+          
+          // If event_location matching didn't work, try to match by check-in time
+          if (!matchedEventTime) {
+            const checkInTime = new Date(checkIn.attributes.created_at).getTime();
+            let closestEventTime = eventTimesForPeriod[0];
+            let closestDiff = Math.abs(new Date(closestEventTime.attributes.starts_at).getTime() - checkInTime);
+            
+            eventTimesForPeriod.forEach(et => {
+              const etTime = new Date(et.attributes.starts_at).getTime();
+              const diff = Math.abs(etTime - checkInTime);
+              if (diff < closestDiff) {
+                closestDiff = diff;
+                closestEventTime = et;
+              }
+            });
+            
+            matchedEventTime = closestEventTime;
+            console.log(`✅ Matched CheckIn ${checkIn.id} to EventTime ${matchedEventTime.id} (closest time match for period ${eventPeriodId})`);
+          }
+          
+          eventTime = matchedEventTime;
+          eventTimeId = eventTime.id;
+        }
+      }
+    }
+    
+    // CRITICAL DEBUG: Log event_time assignment for ALL check-ins to diagnose timing issues
     console.log(`🔍 CheckIn ${checkIn.id} (${firstName} ${lastName}):`, {
-      eventPeriodId: eventPeriodId || 'MISSING',
-      starts_at: eventPeriod?.attributes.starts_at || 'MISSING',
-      parsedTime: eventPeriod?.attributes.starts_at ? new Date(eventPeriod.attributes.starts_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : 'N/A'
+      eventTimeId: eventTimeId || '❌ MISSING - Check-in has no event_time relationship!',
+      eventTimeStartsAt: eventTime?.attributes.starts_at || '❌ MISSING',
+      parsedTime: eventTime?.attributes.starts_at ? new Date(eventTime.attributes.starts_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : 'N/A',
+      eventPeriodId: eventPeriodId || 'N/A (fallback)',
+      usingEventTime: !!eventTime,
+      // Show what relationships the check-in actually has
+      checkInRelationships: Object.keys(checkIn.relationships || {}),
+      // Show if event_time is in the map
+      eventTimeInMap: eventTimeId ? eventTimesMap.has(eventTimeId) : false,
+      // Show direct relationship values
+      directEventTimeId: checkIn.relationships?.event_time?.data?.id || 'none',
+      directEventTimesId: (checkIn.relationships as any)?.event_times?.data ? 
+        (Array.isArray((checkIn.relationships as any).event_times.data) ? 
+          (checkIn.relationships as any).event_times.data.map((d: any) => d.id) : 
+          (checkIn.relationships as any).event_times.data.id) : 'none',
+      checkInEventLocationId: checkInEventLocationId || 'none',
+      // Show all available event_times for this period
+      availableEventTimesForPeriod: eventPeriodId ? Array.from(eventTimesMap.values())
+        .filter(et => {
+          const etPeriodId = (et as any)?.relationships?.event_period?.data?.id;
+          return etPeriodId === eventPeriodId;
+        })
+        .map(et => ({
+          id: et.id,
+          starts_at: et.attributes.starts_at,
+          parsedTime: new Date(et.attributes.starts_at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+          event_location_id: (et as any)?.relationships?.event_location?.data?.id
+        })) : []
     });
     
-    // CRITICAL: If event_period is missing from included array after all fetching, log error
-    if (eventPeriodId && !eventPeriod) {
-      console.error(`❌ CRITICAL: EventPeriod ${eventPeriodId} NOT FOUND for CheckIn ${checkIn.id} (${firstName} ${lastName})`);
+    // CRITICAL: If event_time is missing, log error (this is what we need for correct service times)
+    if (!eventTimeId && index < 3) {
+      console.warn(`⚠️ CheckIn ${checkIn.id} is missing event_time relationship - will fallback to event_period`);
+    }
+    
+    if (eventTimeId && !eventTime) {
+      console.error(`❌ CRITICAL: EventTime ${eventTimeId} NOT FOUND for CheckIn ${checkIn.id} (${firstName} ${lastName})`);
       console.error(`   This check-in will have INCORRECT service time!`);
     }
     
     // Try to get event via direct CheckIn relationship first (might be more reliable)
+    // Also try via event_time or event_period relationships
     const directEventId = checkIn.relationships?.event?.data?.id;
-    const event = directEventId ? eventsMap.get(directEventId) : 
-                  (eventPeriod?.relationships?.event?.data?.id ? eventsMap.get(eventPeriod.relationships.event.data.id) : null);
+    let event = directEventId ? eventsMap.get(directEventId) : null;
+    
+    // If not found via direct relationship, try via event_time -> event_period -> event
+    // Only if eventTime exists (it might not be in the API response)
+    if (!event && eventTime && eventTime.relationships?.event_period?.data?.id) {
+      const periodId = eventTime.relationships.event_period.data.id;
+      const period = eventPeriodsMap.get(periodId);
+      if (period?.relationships?.event?.data?.id) {
+        event = eventsMap.get(period.relationships.event.data.id);
+      }
+    }
+    
+    // Fallback: try via event_period -> event
+    if (!event && eventPeriod?.relationships?.event?.data?.id) {
+      event = eventsMap.get(eventPeriod.relationships.event.data.id);
+    }
+    
     const eventId = event?.id;
     
     // Try multiple ways to get location/campus
@@ -1107,28 +1719,83 @@ function transformPCOData(pcoData: PCOApiResponse): CheckInData[] {
     const station = stationId ? stationsMap.get(stationId) : null;
     
     // Try multiple methods to get event_location (classroom) from CheckIn relationship using included[] array
-    // Method 1: Direct relationship on CheckIn (MOST RELIABLE - check this first)
-    let eventLocationId = checkIn.relationships?.event_location?.data?.id;
+    // CRITICAL: In Planning Center, classrooms are stored as "locations" within an event
+    // So check-ins might have a "location" relationship (not "event_location")
+    
+    // Method 1a: Check for "location" relationship on check-in (classrooms are locations in Planning Center)
+    const checkInLocationId = (checkIn.relationships as any)?.location?.data?.id;
+    let eventLocationId = checkInLocationId;
     let eventLocation = eventLocationId ? eventLocationsMap.get(eventLocationId) : null;
     
-    // Only log errors, not successes
-    if (eventLocationId && !eventLocation) {
-      console.warn(`⚠️ CheckIn ${checkIn.id} has event_location ${eventLocationId} but it's not in the map`);
+    if (checkInLocationId && eventLocation) {
+      console.log(`✅ CheckIn ${checkIn.id} has DIRECT location ${eventLocationId} (${eventLocation.attributes.name}) - USING THIS (Method 1a - location relationship)`);
+    } else if (checkInLocationId && !eventLocation) {
+      console.warn(`⚠️ CheckIn ${checkIn.id} has location ${checkInLocationId} but it's not in the map - will try to find it`);
+      // Try to find this location in the locationsMap and add it to eventLocationsMap
+      const locationFromMap = locationsMap.get(checkInLocationId);
+      if (locationFromMap) {
+        // Convert Location to EventLocation since classrooms are locations
+        const eventLocationFromLocation: PCOEventLocation = {
+          type: 'EventLocation',
+          id: locationFromMap.id,
+          attributes: {
+            name: locationFromMap.attributes.name,
+            label: locationFromMap.attributes.name,
+            classroom: locationFromMap.attributes.name
+          }
+        };
+        if (!eventLocationsMap.has(eventLocationFromLocation.id)) {
+          eventLocationsMap.set(eventLocationFromLocation.id, eventLocationFromLocation);
+        }
+        eventLocation = eventLocationFromLocation;
+        eventLocationId = eventLocationFromLocation.id;
+        console.log(`✅ Converted Location ${checkInLocationId} to EventLocation (${eventLocation.attributes.name})`);
+      }
     }
     
-    // Method 2: Try via event_period's event_location relationship (check this BEFORE event.event_locations)
-    // CRITICAL: Each event_period might have its own event_location (classroom)
-    // This is how Planning Center links specific service times to specific classrooms
-    // THIS IS THE MOST ACCURATE METHOD - it directly links service times to classrooms
+    // Method 1: Direct event_location relationship on CheckIn (if location relationship didn't work)
+    if (!eventLocation) {
+      const checkInDirectEventLocationId = checkIn.relationships?.event_location?.data?.id;
+      eventLocationId = checkInDirectEventLocationId;
+      eventLocation = eventLocationId ? eventLocationsMap.get(eventLocationId) : null;
+      
+      // CRITICAL: Log the direct check-in event_location for debugging
+      if (checkInDirectEventLocationId) {
+        if (eventLocation) {
+          console.log(`✅ CheckIn ${checkIn.id} has DIRECT event_location ${eventLocationId} (${eventLocation.attributes.name}) - USING THIS (Method 1)`);
+        } else {
+          console.warn(`⚠️ CheckIn ${checkIn.id} has event_location ${eventLocationId} but it's not in the map - this should have been fetched!`);
+        }
+      } else {
+        console.log(`⚠️ CheckIn ${checkIn.id} has NO direct event_location relationship - will try fallback methods`);
+      }
+    }
+    
+    // Method 2: Try via event_time's event_location relationship (ONLY if check-in doesn't have direct relationship)
+    // CRITICAL: Never use this if check-in has a direct location or event_location relationship
+    // Note: The check-in's direct location/event_location is more reliable because it's what was actually selected
+    if (!checkInLocationId && !eventLocation && eventTime) {
+      const timeEventLocationId = eventTime?.relationships?.event_location?.data?.id;
+      if (timeEventLocationId) {
+        eventLocation = eventLocationsMap.get(timeEventLocationId);
+        if (eventLocation) {
+          eventLocationId = timeEventLocationId;
+          console.log(`✅ Found event_location ${eventLocationId} (${eventLocation.attributes.name}) via event_time ${eventTimeId} (fallback - no direct relationship)`);
+        } else {
+          console.warn(`⚠️ EventTime ${eventTimeId} has event_location ${timeEventLocationId} but it's not in the map`);
+        }
+      } else {
+        console.log(`⚠️ EventTime ${eventTimeId} has NO event_location relationship`);
+      }
+    }
+    
+    // Method 2b: Fallback to event_period's event_location relationship if event_time didn't work
     if (!eventLocation && eventPeriod) {
-      // Check if the event_period itself has an event_location relationship
       const periodEventLocationId = (eventPeriod as any)?.relationships?.event_location?.data?.id;
       if (periodEventLocationId) {
         eventLocation = eventLocationsMap.get(periodEventLocationId);
         if (eventLocation) {
           eventLocationId = periodEventLocationId;
-        } else {
-          console.warn(`⚠️ CheckIn ${checkIn.id}: event_period references event_location ${periodEventLocationId} but it's not in the map`);
         }
       }
     }
@@ -1150,47 +1817,55 @@ function transformPCOData(pcoData: PCOApiResponse): CheckInData[] {
       }
     }
     
-    // Method 3: Match EventLocations based on event_period ID hash (only if Methods 1, 1b, 2 failed)
-    // CRITICAL: Only use EventLocations that belong to this event, not all EventLocations
-    // Filter EventLocations by checking if they're referenced by this event's event_locations relationship
+    // Method 3: DISABLED - Hash-based matching was assigning wrong classrooms
+    // We should NOT assign classrooms based on hash/random matching as it gives incorrect results
+    // Better to show "No classroom" than show the wrong classroom
+    // If we can't find the classroom through direct relationships, leave it undefined
+    if (!eventLocation && eventTime && eventId && eventLocationsMap.size > 0) {
+      console.log(`⚠️ CheckIn ${checkIn.id}: No event_location found via direct relationships. NOT using hash-based matching to avoid wrong assignments.`);
+    }
+    
+    // Method 3b: DISABLED - Same reason as Method 3
     if (!eventLocation && eventPeriod && eventId && eventLocationsMap.size > 0) {
-      // Get EventLocations that belong to this event (from event.event_locations relationship)
-      let eventEventLocations: PCOEventLocation[] = [];
-      if (event) {
-        const eventEventLocationRefs = (event.relationships as any)?.event_locations?.data;
-        if (Array.isArray(eventEventLocationRefs) && eventEventLocationRefs.length > 0) {
-          eventEventLocations = eventEventLocationRefs
-            .map((ref: any) => eventLocationsMap.get(ref.id))
-            .filter((el: PCOEventLocation | undefined): el is PCOEventLocation => el !== undefined);
-        }
-      }
-      
-      // CRITICAL: Only use hash-based matching if we can scope EventLocations to this event
-      // Without proper scoping, we might assign classrooms from other events
-      if (eventEventLocations.length > 0) {
-        if (eventEventLocations.length === 1) {
-          // Single EventLocation - use it for all check-ins of this event
-          eventLocation = eventEventLocations[0];
-          eventLocationId = eventLocation.id;
-        } else {
-          // Multiple EventLocations - match by event_period ID hash for consistency
-          // This ensures each event_period (service time) gets the same classroom consistently
-          const periodHash = eventPeriodId ? parseInt(eventPeriodId) % eventEventLocations.length : index % eventEventLocations.length;
-          eventLocation = eventEventLocations[periodHash];
-          eventLocationId = eventLocation.id;
-        }
-      }
+      console.log(`⚠️ CheckIn ${checkIn.id}: No event_location found via direct relationships. NOT using hash-based matching to avoid wrong assignments.`);
     }
     
     // Method 4 REMOVED: Last resort matching was causing cross-event contamination
     // If we reach here without an eventLocation, it means the API data is incomplete
     // Better to show no classroom than show the WRONG classroom
     
+    // CRITICAL: Log classroom assignment for ALL check-ins to diagnose issues
+    console.log(`🏫 CheckIn ${checkIn.id} (${firstName} ${lastName}) - Classroom Assignment:`, {
+      finalEventLocationId: eventLocationId || '❌ NONE ASSIGNED',
+      finalClassName: eventLocation ? (eventLocation.attributes.name || eventLocation.attributes.label || eventLocation.attributes.classroom) : '❌ NONE',
+      methodUsed: eventLocation ? (
+        (checkIn.relationships as any)?.location?.data?.id === eventLocationId ? 'Method 1a (check-in location relationship)' :
+        checkIn.relationships?.event_location?.data?.id === eventLocationId ? 'Method 1 (direct check-in event_location)' :
+        eventTime && eventTime.relationships?.event_location?.data?.id === eventLocationId ? 'Method 2 (via event_time)' :
+        eventPeriod && (eventPeriod as any)?.relationships?.event_location?.data?.id === eventLocationId ? 'Method 2b (via event_period)' :
+        'Method 3+ (fallback/hash-based)'
+      ) : 'NO METHOD WORKED',
+      checkInLocationId: (checkIn.relationships as any)?.location?.data?.id || 'none',
+      checkInDirectEventLocationId: checkIn.relationships?.event_location?.data?.id || 'none',
+      eventTimeEventLocationId: eventTime ? (eventTime.relationships?.event_location?.data?.id || 'none') : 'no event_time',
+      eventPeriodEventLocationId: eventPeriod ? ((eventPeriod as any)?.relationships?.event_location?.data?.id || 'none') : 'no event_period',
+      allAvailableEventLocations: Array.from(eventLocationsMap.entries()).map(([id, el]) => ({
+        id,
+        name: el.attributes?.name || el.attributes?.label || 'unnamed',
+        inCheckInLocation: (checkIn.relationships as any)?.location?.data?.id === id,
+        inCheckInDirect: checkIn.relationships?.event_location?.data?.id === id,
+        inEventTime: eventTime ? (eventTime.relationships?.event_location?.data?.id === id) : false,
+        inEventPeriod: eventPeriod ? ((eventPeriod as any)?.relationships?.event_location?.data?.id === id) : false
+      }))
+    });
+    
     // CRITICAL: Log if classroom assignment failed
-    if (!eventLocation && index === 0) {
+    if (!eventLocation) {
       console.error(`❌ NO CLASSROOM ASSIGNED for CheckIn ${checkIn.id} (${firstName} ${lastName})`);
-      console.error(`   Method 1 (direct): ${checkIn.relationships?.event_location?.data?.id || 'none'}`);
-      console.error(`   Method 2 (event_period): ${eventPeriod ? (eventPeriod as any)?.relationships?.event_location?.data?.id || 'none' : 'no event_period'}`);
+      console.error(`   Method 1a (check-in location): ${(checkIn.relationships as any)?.location?.data?.id || 'none'}`);
+      console.error(`   Method 1 (direct event_location): ${checkIn.relationships?.event_location?.data?.id || 'none'}`);
+      console.error(`   Method 2 (event_time): ${eventTime ? eventTime.relationships?.event_location?.data?.id || 'none' : 'no event_time'}`);
+      console.error(`   Method 2b (event_period): ${eventPeriod ? (eventPeriod as any)?.relationships?.event_location?.data?.id || 'none' : 'no event_period'}`);
       console.error(`   Method 1b (event.event_locations): ${event ? (event.relationships as any)?.event_locations?.data?.length || 0 : 'no event'}`);
       console.error(`   EventLocations available in map: ${eventLocationsMap.size}`);
       if (eventLocationsMap.size > 0) {
@@ -1198,12 +1873,15 @@ function transformPCOData(pcoData: PCOApiResponse): CheckInData[] {
       }
     }
     
+    // CRITICAL: Use event_time for service time (this is the specific service time, not the week)
     let serviceTime: string | undefined;
-    if (eventPeriod?.attributes.starts_at) {
+    
+    // Primary: Use event_time (specific service time)
+    if (eventTime?.attributes.starts_at) {
       try {
         // Parse the ISO timestamp from Planning Center
         // PCO returns times in ISO format (e.g., "2024-01-07T08:00:00Z")
-        const startsAt = new Date(eventPeriod.attributes.starts_at);
+        const startsAt = new Date(eventTime.attributes.starts_at);
         
         // Format to user's local timezone (no hardcoded timezone)
         // This respects the browser/system timezone automatically
@@ -1213,14 +1891,28 @@ function transformPCOData(pcoData: PCOApiResponse): CheckInData[] {
           hour12: true
         });
       } catch (e) {
+        console.error(`❌ Error parsing service time for event_time ${eventTimeId}:`, e);
+        // Fallback to event_time name if parsing fails
+        serviceTime = eventTime.attributes.name || 'Unknown Time';
+      }
+    } else if (eventPeriod?.attributes.starts_at) {
+      // Fallback: Use event_period if event_time is not available (for backwards compatibility)
+      try {
+        const startsAt = new Date(eventPeriod.attributes.starts_at);
+        serviceTime = startsAt.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        });
+        console.warn(`⚠️ Using event_period fallback for service time (event_time not available) for CheckIn ${checkIn.id}`);
+      } catch (e) {
         console.error(`❌ Error parsing service time for event_period ${eventPeriodId}:`, e);
-        // Fallback to event_period name if parsing fails
         serviceTime = eventPeriod.attributes.name || 'Unknown Time';
       }
     }
     
     const eventName = event?.attributes.name || 'Unknown Service';
-    // IMPORTANT: Each event_period has its own service time (starts_at)
+    // IMPORTANT: Each event_time has its own service time (starts_at)
     // This ensures check-ins for different service times (8:00 AM, 11:00 AM, 12:30 PM) 
     // are correctly distinguished and grouped separately
     const serviceName = serviceTime && eventName !== 'Unknown Service'
@@ -1228,8 +1920,10 @@ function transformPCOData(pcoData: PCOApiResponse): CheckInData[] {
       : eventName;
     
     // Log only if service time is missing (critical for grouping)
-    if (!serviceTime && eventPeriod && index < 3) {
-      console.warn(`⚠️ CheckIn ${checkIn.id} has event_period but no serviceTime was parsed from ${eventPeriod.attributes.starts_at}`);
+    if (!serviceTime && eventTime && index < 3) {
+      console.warn(`⚠️ CheckIn ${checkIn.id} has event_time but no serviceTime was parsed from ${eventTime.attributes.starts_at}`);
+    } else if (!serviceTime && !eventTime && eventPeriod && index < 3) {
+      console.warn(`⚠️ CheckIn ${checkIn.id} has event_period but no event_time and no serviceTime was parsed from ${eventPeriod.attributes.starts_at}`);
     }
     
     // Extract campus name from event name (e.g., "Sunday Services – South Tampa" -> "South Tampa")
@@ -1249,11 +1943,19 @@ function transformPCOData(pcoData: PCOApiResponse): CheckInData[] {
       }
     }
     
-    // Use location from API if available, otherwise use extracted campus name
-    const locationName = location?.attributes.name || campusName;
-    
-    const result = {
-      id: checkIn.id,
+      // Use location from API if available, otherwise use extracted campus name
+      const locationName = location?.attributes.name || campusName;
+      
+      // CRITICAL: Create unique ID for each event_time
+      // If a check-in has multiple event_times, each record needs a unique ID
+      const uniqueId = (!isFallback && eventTimeId) 
+        ? `${checkIn.id}-${eventTimeId}` 
+        : eventTimeIndex > 0 
+          ? `${checkIn.id}-${eventTimeIndex}` 
+          : checkIn.id;
+      
+      const result = {
+      id: uniqueId,
       childName: `${firstName} ${lastName}`,
       familyName: lastName,
       securityCode: checkIn.attributes.security_code || '',
@@ -1274,7 +1976,8 @@ function transformPCOData(pcoData: PCOApiResponse): CheckInData[] {
           if (index < 5) {
             console.warn(`⚠️ CheckIn ${checkIn.id} (${firstName} ${lastName}): No eventLocation assigned!`, {
               eventLocationId,
-              eventPeriodId,
+              eventTimeId: eventTimeId || 'none',
+              eventPeriodId: eventPeriodId || 'none',
               eventId,
               eventLocationsMapSize: eventLocationsMap.size,
               availableEventLocations: Array.from(eventLocationsMap.entries()).map(([id, el]) => ({
@@ -1306,22 +2009,28 @@ function transformPCOData(pcoData: PCOApiResponse): CheckInData[] {
       })(),
     };
     
-    // Log ALL transformations to catch service time and classroom issues
-    console.log(`✅ Transformed CheckIn ${checkIn.id} (${result.childName}):`, {
-      campus: result.locationName || '❌ MISSING',
-      eventName: result.eventName || '❌ MISSING',
-      serviceTime: result.serviceTime || '❌ MISSING',
-      className: result.className || '❌ MISSING',
-      stationName: result.stationName || 'N/A',
-      serviceName: result.serviceName,
-      rawEventPeriodStartsAt: eventPeriod?.attributes.starts_at || 'N/A',
-      parsedServiceTime: serviceTime || 'N/A',
-      rawEventLocationName: eventLocation?.attributes.name || 'N/A',
-      securityCode: result.securityCode
-    });
-    
-    return result;
-  });
+      // Log ALL transformations to catch service time and classroom issues
+      console.log(`✅ Transformed CheckIn ${checkIn.id} (${result.childName}) for event_time ${eventTimeId || 'fallback'}:`, {
+        campus: result.locationName || '❌ MISSING',
+        eventName: result.eventName || '❌ MISSING',
+        serviceTime: result.serviceTime || '❌ MISSING',
+        className: result.className || '❌ MISSING',
+        stationName: result.stationName || 'N/A',
+        serviceName: result.serviceName,
+        rawEventTimeStartsAt: eventTime?.attributes.starts_at || 'N/A',
+        rawEventPeriodStartsAt: eventPeriod?.attributes.starts_at || 'N/A (fallback)',
+        parsedServiceTime: serviceTime || 'N/A',
+        rawEventLocationName: eventLocation?.attributes.name || 'N/A',
+        securityCode: result.securityCode,
+        usingEventTime: !!eventTime
+      });
+      
+      results.push(result);
+    }); // End of eventTimeIds.forEach
+  }); // End of data.forEach
+  
+  console.log(`✅ Transformation complete: Created ${results.length} CheckInData records from ${data.length} check-ins`);
+  return results;
 }
 
 /**
@@ -1339,4 +2048,5 @@ export async function testPCOConnection(): Promise<boolean> {
     return false;
   }
 }
+
 

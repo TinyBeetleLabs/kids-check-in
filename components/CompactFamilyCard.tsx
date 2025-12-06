@@ -1,33 +1,42 @@
 /**
- * CompactKidCard Component
+ * CompactFamilyCard Component
  * 
- * Displays a child's information in a compact card format for the "All" locations view.
- * Shows: Name, Security Code, Classroom, and a menu for actions.
- * Optimized for scanning and density.
+ * Displays a family (siblings) in a compact card format for the "All" locations view.
+ * Shows: All sibling names, single Security Code, and a single menu for family actions.
  */
 
 import React, { useState, useRef, useEffect } from 'react';
 import { CheckInData } from '@/lib/mockData';
 
-interface CompactKidCardProps {
-  kid: CheckInData;
+interface CompactFamilyCardProps {
+  siblings: CheckInData[];
   onCheckOut: (securityCode: string) => void;
   onCheckIn: (securityCode: string) => void;
   onDismiss: (securityCode: string, serviceName?: string) => void;
   onRollOver: (securityCode: string, serviceName?: string) => void;
 }
 
-export default function CompactKidCard({
-  kid,
+export default function CompactFamilyCard({
+  siblings,
   onCheckOut,
   onCheckIn,
   onDismiss,
   onRollOver,
-}: CompactKidCardProps) {
+}: CompactFamilyCardProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, right: 0 });
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  
+  // All siblings share the same security code
+  const securityCode = siblings[0].securityCode;
+  const familyName = siblings[0].familyName;
+  // Use the first sibling's service name (siblings in a family card should be from the same service)
+  const serviceName = siblings[0].serviceName;
+  
+  // Check if any sibling is checked out
+  const anyCheckedOut = siblings.some(kid => kid.checkedOut);
+  const allCheckedOut = siblings.every(kid => kid.checkedOut);
 
   // Calculate menu position when it opens
   useEffect(() => {
@@ -72,14 +81,21 @@ export default function CompactKidCard({
   const handleAction = (action: () => void) => {
     action();
     setIsMenuOpen(false);
-  };
+  }
 
   return (
-    <div className="compact-kid-card">
-      {/* Single Row: Name and Code */}
+    <div className="compact-family-card">
+      {/* Family Row: Names, Code, and Menu */}
       <div className="card-content">
-        <div className="kid-name">{kid.childName}</div>
-        <div className="security-code">{kid.securityCode}</div>
+        <div className="family-names">
+          {siblings.map((kid, index) => (
+            <span key={kid.id} className="kid-name">
+              {kid.childName}
+              {index < siblings.length - 1 && <span className="separator">, </span>}
+            </span>
+          ))}
+        </div>
+        <div className="security-code">{securityCode}</div>
         
         {/* Menu Button */}
         <div className="menu-container" ref={menuRef}>
@@ -101,20 +117,20 @@ export default function CompactKidCard({
                 right: `${menuPosition.right}px`,
               }}
             >
-              {!kid.checkedOut ? (
+              {!anyCheckedOut ? (
                 <>
-                  <button onClick={() => handleAction(() => onCheckOut(kid.securityCode))}>
+                  <button onClick={() => handleAction(() => onCheckOut(securityCode))}>
                     ✓ Check Out
                   </button>
-                  <button onClick={() => handleAction(() => onRollOver(kid.securityCode, kid.serviceName))}>
+                  <button onClick={() => handleAction(() => onRollOver(securityCode, serviceName))}>
                     🔄 Roll Over
                   </button>
-                  <button onClick={() => handleAction(() => onDismiss(kid.securityCode, kid.serviceName))}>
+                  <button onClick={() => handleAction(() => onDismiss(securityCode, serviceName))}>
                     ⊗ Mark No-Show
                   </button>
                 </>
               ) : (
-                <button onClick={() => handleAction(() => onCheckIn(kid.securityCode))}>
+                <button onClick={() => handleAction(() => onCheckIn(securityCode))}>
                   ↩ Undo Check Out
                 </button>
               )}
@@ -124,18 +140,18 @@ export default function CompactKidCard({
       </div>
 
       <style jsx>{`
-        .compact-kid-card {
+        .compact-family-card {
           background: white;
           border-bottom: 1px solid #e5e7eb;
-          padding: 10px 12px;
+          padding: 12px;
           transition: all 0.15s ease;
         }
 
-        .compact-kid-card:hover {
+        .compact-family-card:hover {
           background: #f9fafb;
         }
 
-        .compact-kid-card:last-child {
+        .compact-family-card:last-child {
           border-bottom: none;
         }
 
@@ -145,15 +161,35 @@ export default function CompactKidCard({
           gap: 12px;
         }
 
-        .kid-name {
+        .family-names {
           font-size: 15px;
           font-weight: 600;
           color: #1f2937;
           line-height: 1.4;
           flex: 1;
           min-width: 0;
-          overflow: hidden;
-          text-overflow: ellipsis;
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+
+        .kid-name {
+          white-space: nowrap;
+        }
+
+        .separator {
+          color: #9ca3af;
+          font-weight: 400;
+        }
+
+        .security-code {
+          font-size: 16px;
+          font-weight: 700;
+          color: #3b82f6;
+          letter-spacing: 0.5px;
+          padding: 4px 12px;
+          background: #eff6ff;
+          border-radius: 6px;
           white-space: nowrap;
         }
 
@@ -211,18 +247,6 @@ export default function CompactKidCard({
 
         .menu-dropdown button:hover {
           background: #f9fafb;
-          color: #3b82f6;
-        }
-
-        .security-code {
-          font-size: 16px;
-          font-weight: 700;
-          color: #3b82f6;
-          letter-spacing: 0.5px;
-          padding: 4px 12px;
-          background: #eff6ff;
-          border-radius: 6px;
-          white-space: nowrap;
         }
       `}</style>
     </div>

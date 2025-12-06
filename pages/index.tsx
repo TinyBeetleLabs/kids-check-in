@@ -187,7 +187,13 @@ export default function Home() {
         }
         
         if (savedServiceTime) {
-          setSelectedServiceTime(savedServiceTime);
+          // For teachers, don't allow "All" - reset to first available time if needed
+          if (userProfile?.role === 'teacher' && savedServiceTime === 'All') {
+            // Will be handled by the useEffect that auto-selects first service time
+            setSelectedServiceTime('All'); // Temporary, will be updated by useEffect
+          } else {
+            setSelectedServiceTime(savedServiceTime);
+          }
         } else {
           setSelectedServiceTime('All');
         }
@@ -255,6 +261,34 @@ export default function Home() {
   }, []);
 
   /**
+   * Load roll-over records from localStorage
+   */
+  const loadRolloverRecords = useCallback((): CheckInData[] => {
+    try {
+      const saved = localStorage.getItem('rolloverRecords');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (err) {
+      console.error('Error loading roll-over records:', err);
+    }
+    return [];
+  }, []);
+
+  /**
+   * Save roll-over records to localStorage
+   */
+  const saveRolloverRecords = useCallback((checkInsData: CheckInData[]) => {
+    try {
+      // Only save roll-over records (those with rolloverTimestamp)
+      const rolloverRecords = checkInsData.filter(c => c.rolloverTimestamp);
+      localStorage.setItem('rolloverRecords', JSON.stringify(rolloverRecords));
+    } catch (err) {
+      console.error('Error saving roll-over records:', err);
+    }
+  }, []);
+
+  /**
    * Fetches check-in data from the API with deduplication
    * Prevents duplicate API calls if one is already in progress
    */
@@ -299,10 +333,55 @@ export default function Home() {
           return checkIn;
         });
         
-        // Detect multi-service kids (from Planning Center pre-registration)
-        mergedData = detectMultiService(mergedData);
+        // ⭐ PRESERVE ROLL-OVER RECORDS: Keep any roll-over records from current state or localStorage
+        setCheckIns(prevCheckIns => {
+          // Get roll-over records from current state
+          const currentRollovers = prevCheckIns.filter(c => c.rolloverTimestamp);
+          
+          // Also load saved roll-over records from localStorage (in case of page refresh)
+          const savedRollovers = loadRolloverRecords();
+          
+          // Combine and deduplicate roll-over records
+          const allRollovers = [...currentRollovers, ...savedRollovers];
+          const rolloverMap = new Map<string, CheckInData>();
+          allRollovers.forEach(rollover => {
+            // Use the most recent version if there are duplicates
+            const existing = rolloverMap.get(rollover.id);
+            if (!existing || (rollover.rolloverTimestamp && existing.rolloverTimestamp && rollover.rolloverTimestamp > existing.rolloverTimestamp)) {
+              rolloverMap.set(rollover.id, rollover);
+            }
+          });
+          const rolloverRecords = Array.from(rolloverMap.values());
+          
+          // Create a map of existing check-in IDs from fresh data
+          const existingIds = new Set(mergedData.map((c: CheckInData) => c.id));
+          
+          // Only keep roll-over records that aren't already in the fresh data
+          // (in case the child was actually registered for that service)
+          const preservedRollovers = rolloverRecords.filter(rollover => {
+            // Check if this roll-over is still valid (child not checked out, not no-show)
+            const isStillActive = !rollover.checkedOut && rollover.status !== 'no-show';
+            
+            // Check if there's already a real check-in for this service
+            const hasRealCheckIn = mergedData.some((c: CheckInData) => 
+              c.securityCode === rollover.securityCode && 
+              c.serviceName === rollover.serviceName &&
+              !c.rolloverTimestamp // Only count real check-ins, not other roll-overs
+            );
+            
+            return isStillActive && !hasRealCheckIn && !existingIds.has(rollover.id);
+          });
+          
+          // Merge preserved roll-overs with fresh data
+          const finalData = [...mergedData, ...preservedRollovers];
+          
+          // Save roll-over records for persistence
+          saveRolloverRecords(finalData);
+          
+          // Detect multi-service kids (from Planning Center pre-registration)
+          return detectMultiService(finalData);
+        });
         
-        setCheckIns(mergedData);
         setMode(result.mode);
         setLastUpdated(new Date());
         setError(null);
@@ -316,7 +395,7 @@ export default function Home() {
       setLoading(false);
       fetchInProgress.current = false;
     }
-  }, [loadCheckedOutState]);
+  }, [loadCheckedOutState, loadRolloverRecords, saveRolloverRecords]);
 
   /**
    * Initial fetch on component mount
@@ -585,6 +664,7 @@ export default function Home() {
   /**
    * Extract unique service times from check-ins and sort chronologically
    * IMPORTANT: Filter by selected location so service times match the location's schedule
+   * For teachers: Exclude "All" option and only show their specific service times
    */
   const serviceTimes = React.useMemo(() => {
     const times = new Set<string>();
@@ -620,8 +700,29 @@ export default function Home() {
       return parseTime(a) - parseTime(b);
     });
     
+    // Teachers don't see "All" option - only specific service times
+    if (userProfile?.role === 'teacher') {
+      return sortedTimes;
+    }
+    
+    // Admins see "All" option plus specific times
     return ['All', ...sortedTimes];
-  }, [checkIns, selectedLocation]);
+  }, [checkIns, selectedLocation, userProfile]);
+
+  /**
+   * Auto-select first service time for teachers if "All" is selected
+   * (since teachers don't have "All" option)
+   */
+  useEffect(() => {
+    if (userProfile?.role === 'teacher' && selectedServiceTime === 'All' && serviceTimes.length > 0) {
+      // Auto-select the first (earliest) service time
+      setSelectedServiceTime(serviceTimes[0]);
+      // Update localStorage
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('selectedServiceTime', serviceTimes[0]);
+      }
+    }
+  }, [userProfile, serviceTimes, selectedServiceTime]);
 
   /**
    * Filter check-ins including both active AND checked-out kids (for stats calculation)
@@ -698,19 +799,52 @@ export default function Home() {
 
   /**
    * Helper: Get next service time from current service
+   * Uses location-specific service times to ensure correct rollover
    * @returns Next service name or null if already at last service
    */
-  const getNextService = useCallback((currentService: string): string | null => {
-    const services = ['8:00 AM', '9:30 AM', '11:00 AM', '12:30 PM'];
-    const current = services.find(s => currentService.includes(s));
-    if (!current) return null;
+  const getNextService = useCallback((currentService: string, locationName?: string): string | null => {
+    // Extract the location/event name from current service
+    // Format: "Sunday Services – Heights • 8:00 AM" -> "Sunday Services – Heights"
+    const timeMatch = currentService.match(/(\d{1,2}:\d{2}\s?[AP]M)/i);
+    if (!timeMatch) return null;
     
-    const currentIndex = services.indexOf(current);
-    // Only roll forward, never backward
-    return currentIndex < services.length - 1 
-      ? `${services[currentIndex + 1]} Service` 
-      : null;
-  }, []);
+    const eventName = currentService.substring(0, timeMatch.index).trim().replace(/\s*•\s*$/, '').trim();
+    const currentTime = timeMatch[1];
+    
+    // Get location-specific service times from check-ins
+    // Find all unique service times for this location
+    const locationServices = new Set<string>();
+    checkIns.forEach(checkIn => {
+      if (checkIn.locationName === locationName && checkIn.serviceName) {
+        const serviceTimeMatch = checkIn.serviceName.match(/(\d{1,2}:\d{2}\s?[AP]M)/i);
+        if (serviceTimeMatch) {
+          locationServices.add(serviceTimeMatch[1]);
+        }
+      }
+    });
+    
+    // Convert to sorted array
+    const services = Array.from(locationServices).sort((a, b) => {
+      const parseTime = (time: string) => {
+        const match = time.match(/(\d{1,2}):(\d{2})\s?([AP]M)/i);
+        if (!match) return 0;
+        let hours = parseInt(match[1]);
+        const minutes = parseInt(match[2]);
+        const period = match[3].toUpperCase();
+        if (period === 'PM' && hours !== 12) hours += 12;
+        if (period === 'AM' && hours === 12) hours = 0;
+        return hours * 60 + minutes;
+      };
+      return parseTime(a) - parseTime(b);
+    });
+    
+    // Find current time in the location's service list
+    const currentIndex = services.findIndex(s => currentTime.toUpperCase().includes(s.toUpperCase()) || s.toUpperCase().includes(currentTime.toUpperCase()));
+    if (currentIndex === -1 || currentIndex >= services.length - 1) return null;
+    
+    const nextTime = services[currentIndex + 1];
+    return `${eventName} • ${nextTime}`;
+  }, [checkIns]);
 
   /**
    * Handle undo roll-over by deleting the newly created records
@@ -723,26 +857,34 @@ export default function Home() {
       );
       
       saveCheckedOutState(updated);
+      saveRolloverRecords(updated); // Update roll-over records
       return updated;
     });
     
     setToast(null); // Clear toast
-  }, [saveCheckedOutState]);
+  }, [saveCheckedOutState, saveRolloverRecords]);
 
   /**
    * Handle roll-over to next service with deduplication
+   * If currentServiceName is provided, only roll over kids from that specific service
+   * This prevents rolling over kids from other service times when they're checked into multiple services
    */
-  const handleRollOver = useCallback((securityCode: string) => {
+  const handleRollOver = useCallback((securityCode: string, currentServiceName?: string) => {
     setCheckIns(prevCheckIns => {
       // 1. Find kids to roll over (active, not checked out, not no-show)
+      // CRITICAL: If currentServiceName is provided, only roll over kids from that specific service
       const kidsToRollOver = prevCheckIns.filter(
-        c => c.securityCode === securityCode && !c.checkedOut && c.status !== 'no-show'
+        c => c.securityCode === securityCode && 
+             !c.checkedOut && 
+             c.status !== 'no-show' &&
+             (!currentServiceName || c.serviceName === currentServiceName) // Only from current service if specified
       );
       
       if (kidsToRollOver.length === 0) return prevCheckIns;
       
       const currentService = kidsToRollOver[0].serviceName;
-      const nextService = getNextService(currentService);
+      const locationName = kidsToRollOver[0].locationName;
+      const nextService = getNextService(currentService, locationName);
       
       if (!nextService) {
         setToast({ 
@@ -753,10 +895,13 @@ export default function Home() {
       }
       
       // 2. ⭐ DEDUPLICATION: Check if already registered for next service
+      // Only check for duplicates in the NEXT service, not other services
       const alreadyRegistered = prevCheckIns.some(
         c => c.securityCode === securityCode && 
              c.serviceName === nextService &&
-             c.status !== 'no-show'
+             c.status !== 'no-show' &&
+             // CRITICAL: Don't count the current service's records as duplicates
+             c.serviceName !== currentService
       );
       
       if (alreadyRegistered) {
@@ -787,6 +932,7 @@ export default function Home() {
       
       const updated = [...prevCheckIns, ...newCheckIns];
       saveCheckedOutState(updated);
+      saveRolloverRecords(updated); // Save roll-over records for persistence
       
       const familyName = kidsToRollOver[0].familyName;
       const count = kidsToRollOver.length;
@@ -799,7 +945,7 @@ export default function Home() {
       
       return updated;
     });
-  }, [saveCheckedOutState, getNextService, handleUndoRollOver]);
+  }, [saveCheckedOutState, saveRolloverRecords, getNextService, handleUndoRollOver]);
 
   /**
    * Handle check-in (reverse check-out) for a family
@@ -864,14 +1010,49 @@ export default function Home() {
 
   /**
    * Handle undo dismiss (reverse no-show status) for a family
+   * If currentServiceName is provided:
+   *   - Finds the dismissTime for that service
+   *   - Undoes all no-shows with the same dismissTime (including cascaded services)
+   * If currentServiceName is NOT provided, undoes all no-shows for that security code
    */
-  const handleUndoDismiss = useCallback((securityCode: string) => {
+  const handleUndoDismiss = useCallback((securityCode: string, currentServiceName?: string) => {
     setCheckIns(prevCheckIns => {
-      const updated = prevCheckIns.map(checkIn =>
-        checkIn.securityCode === securityCode && checkIn.status === 'no-show'
-          ? { ...checkIn, status: 'active', dismissTime: undefined }
-          : checkIn
+      // If no service name provided, undo all no-shows for this security code
+      if (!currentServiceName) {
+        const updated = prevCheckIns.map(checkIn => {
+          const matches = checkIn.securityCode === securityCode && checkIn.status === 'no-show';
+          return matches
+            ? { ...checkIn, status: 'active', dismissTime: undefined }
+            : checkIn;
+        });
+        
+        saveCheckedOutState(updated);
+        return updated;
+      }
+      
+      // Find the dismissTime for the current service (to undo all cascaded services)
+      const currentServiceCheckIn = prevCheckIns.find(
+        c => c.securityCode === securityCode && 
+             c.serviceName === currentServiceName && 
+             c.status === 'no-show'
       );
+      
+      if (!currentServiceCheckIn || !currentServiceCheckIn.dismissTime) {
+        // No matching no-show found, nothing to undo
+        return prevCheckIns;
+      }
+      
+      const dismissTimeToUndo = currentServiceCheckIn.dismissTime;
+      
+      // Undo all no-shows with the same dismissTime (this includes the cascaded services)
+      const updated = prevCheckIns.map(checkIn => {
+        const matches = checkIn.securityCode === securityCode && 
+                        checkIn.status === 'no-show' &&
+                        checkIn.dismissTime === dismissTimeToUndo;
+        return matches
+          ? { ...checkIn, status: 'active', dismissTime: undefined }
+          : checkIn;
+      });
       
       // Save to localStorage
       saveCheckedOutState(updated);
@@ -881,37 +1062,128 @@ export default function Home() {
   }, [saveCheckedOutState]);
 
   /**
-   * Handle dismiss (mark as no-show) for a family
+   * Parse service time from service name and convert to minutes for chronological comparison
+   * Service names are in format: "Location Name • 8:00 AM" or just "8:00 AM"
    */
-  const handleDismiss = useCallback((securityCode: string) => {
+  const parseServiceTime = useCallback((serviceName: string): number => {
+    // Extract time portion from service name (e.g., "8:00 AM" from "South Tampa • 8:00 AM")
+    const match = serviceName.match(/(\d{1,2}):(\d{2})\s?([AP]M)/i);
+    if (!match) return 0; // If no time found, return 0 (will be treated as earliest)
+    
+    let hours = parseInt(match[1]);
+    const minutes = parseInt(match[2]);
+    const period = match[3].toUpperCase();
+    
+    // Convert to 24-hour format
+    if (period === 'PM' && hours !== 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+    
+    // Return total minutes for easy comparison
+    return hours * 60 + minutes;
+  }, []);
+
+  /**
+   * Handle dismiss (mark as no-show) for a family
+   * If currentServiceName is provided:
+   *   - Marks the current service as no-show
+   *   - Automatically cascades to all later services (chronologically) for the same security code
+   *   - Does NOT mark earlier services (they may have already attended)
+   * If currentServiceName is NOT provided, marks all services (backward compatibility)
+   */
+  const handleDismiss = useCallback((securityCode: string, currentServiceName?: string) => {
     setCheckIns(prevCheckIns => {
-      // Get family to dismiss from CURRENT state
-      const family = prevCheckIns.filter(c => c.securityCode === securityCode && !c.checkedOut && c.status !== 'no-show');
-      const count = family.length;
-      const familyName = family[0]?.familyName || '';
+      const dismissTime = new Date().toISOString();
       
-      const updated = prevCheckIns.map(checkIn => 
-        checkIn.securityCode === securityCode && !checkIn.checkedOut && checkIn.status !== 'no-show'
-          ? { ...checkIn, status: 'no-show', dismissTime: new Date().toISOString() }
-          : checkIn
-      );
+      // If no service name provided, mark all services (backward compatibility)
+      if (!currentServiceName) {
+        const family = prevCheckIns.filter(
+          c => c.securityCode === securityCode && 
+               !c.checkedOut && 
+               c.status !== 'no-show'
+        );
+        const count = family.length;
+        const familyName = family[0]?.familyName || '';
+        
+        const updated = prevCheckIns.map(checkIn => {
+          const matches = checkIn.securityCode === securityCode && 
+                          !checkIn.checkedOut && 
+                          checkIn.status !== 'no-show';
+          return matches
+            ? { ...checkIn, status: 'no-show', dismissTime }
+            : checkIn;
+        });
+        
+        saveCheckedOutState(updated);
+        
+        const message = count === 1 
+          ? `${family[0].childName} marked as no-show`
+          : `${familyName} family marked as no-show (${count} kids)`;
+          
+        setToast({
+          message,
+          onUndo: () => handleUndoDismiss(securityCode),
+        });
+        
+        return updated;
+      }
       
-      // Save to localStorage
+      // Service-specific dismiss with cascading to later services
+      const currentServiceTime = parseServiceTime(currentServiceName);
+      const familyName = prevCheckIns.find(c => c.securityCode === securityCode)?.familyName || '';
+      
+      // Find all check-ins to mark as no-show:
+      // 1. Current service (exact match)
+      // 2. All later services (chronologically) for the same security code
+      const updated = prevCheckIns.map(checkIn => {
+        if (checkIn.securityCode !== securityCode || 
+            checkIn.checkedOut || 
+            checkIn.status === 'no-show') {
+          return checkIn; // Skip if wrong family, already checked out, or already no-show
+        }
+        
+        const checkInServiceTime = parseServiceTime(checkIn.serviceName);
+        const isCurrentService = checkIn.serviceName === currentServiceName;
+        const isLaterService = checkInServiceTime > currentServiceTime;
+        
+        // Mark as no-show if it's the current service OR a later service
+        if (isCurrentService || isLaterService) {
+          return { ...checkIn, status: 'no-show', dismissTime };
+        }
+        
+        return checkIn;
+      });
+      
+      // Count how many were marked (for toast message)
+      const markedCount = updated.filter(
+        c => c.securityCode === securityCode && 
+             c.status === 'no-show' && 
+             c.dismissTime === dismissTime
+      ).length;
+      
+      // Count unique services marked
+      const markedServices = new Set(
+        updated
+          .filter(c => c.securityCode === securityCode && c.status === 'no-show' && c.dismissTime === dismissTime)
+          .map(c => c.serviceName)
+      ).size;
+      
       saveCheckedOutState(updated);
       
-      // Show toast with undo option (using current data)
-      const message = count === 1 
-        ? `${family[0].childName} marked as no-show`
-        : `${familyName} family marked as no-show (${count} kids)`;
-        
+      // Enhanced toast message showing cascade
+      const message = markedServices > 1
+        ? `${familyName} family marked as no-show for ${currentServiceName} and ${markedServices - 1} later service${markedServices - 1 === 1 ? '' : 's'} (${markedCount} ${markedCount === 1 ? 'kid' : 'kids'})`
+        : markedCount === 1
+          ? `${updated.find(c => c.securityCode === securityCode && c.status === 'no-show' && c.dismissTime === dismissTime)?.childName || familyName} marked as no-show for ${currentServiceName}`
+          : `${familyName} family marked as no-show for ${currentServiceName} (${markedCount} ${markedCount === 1 ? 'kid' : 'kids'})`;
+      
       setToast({
         message,
-        onUndo: () => handleUndoDismiss(securityCode),
+        onUndo: () => handleUndoDismiss(securityCode, currentServiceName), // Undo only the current service
       });
       
       return updated;
     });
-  }, [saveCheckedOutState, handleUndoDismiss]);
+  }, [saveCheckedOutState, handleUndoDismiss, parseServiceTime]);
 
   /**
    * Pull-to-refresh handlers for mobile
@@ -1021,20 +1293,30 @@ export default function Home() {
 
       {/* Setup Modal for first-time users */}
       {showSetupModal && (
-        <SetupModal 
+        <SetupModal
           onComplete={handleSetupComplete} 
           onClose={handleModalClose}
           availableClassrooms={availableClassrooms}
           availableLocations={availableLocations}
+          currentProfile={userProfile}
         />
       )}
 
       <main 
-        className="min-h-screen p-4 sm:p-6 md:p-8 lg:p-12"
+        className="min-h-screen p-4 sm:p-6 md:p-8 lg:p-12 bg-gradient-to-br from-gray-50 via-blue-50/20 to-gray-50 relative"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
+        {/* Subtle branded background element */}
+        <div className="fixed inset-0 opacity-[0.03] pointer-events-none z-0">
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-[20rem] font-bold text-gray-400 select-none" style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+              RK
+            </div>
+          </div>
+        </div>
+
         {/* Pull-to-refresh indicator */}
         {isPulling && (
           <div className="fixed top-0 left-0 right-0 flex justify-center pt-4 z-40">
@@ -1048,7 +1330,7 @@ export default function Home() {
           </div>
         )}
         
-        <div className="max-w-7xl mx-auto">
+        <div className="max-w-7xl mx-auto relative z-10">
           {/* Header */}
           <header className="mb-4">
             <div className="bg-white rounded-lg shadow-lg p-3 sm:p-4 md:p-5">
@@ -1360,9 +1642,9 @@ export default function Home() {
                 </div>
 
                 {/* Statistics Bar (Both Admin and Teacher) */}
-                <div className="flex justify-end gap-3">
+                <div className="flex flex-wrap justify-end gap-3">
                     {/* Checked In */}
-                    <div className="bg-white rounded-lg shadow-md p-3 min-w-[160px]">
+                    <div className="bg-white rounded-lg shadow-md p-3 min-w-[140px] sm:min-w-[160px] flex-1 sm:flex-none">
                       <div className="flex items-center gap-3">
                         <div className="bg-green-600 rounded-lg p-2 flex-shrink-0">
                           <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1377,7 +1659,7 @@ export default function Home() {
                     </div>
                     
                     {/* Checked Out */}
-                    <div className="bg-white rounded-lg shadow-md p-3 min-w-[160px]">
+                    <div className="bg-white rounded-lg shadow-md p-3 min-w-[140px] sm:min-w-[160px] flex-1 sm:flex-none">
                       <div className="flex items-center gap-3">
                         <div className="bg-gray-500 rounded-lg p-2 flex-shrink-0">
                           <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1392,7 +1674,7 @@ export default function Home() {
                     </div>
                     
                     {/* Total Kids */}
-                    <div className="bg-white rounded-lg shadow-md p-3 min-w-[160px]">
+                    <div className="bg-white rounded-lg shadow-md p-3 min-w-[140px] sm:min-w-[160px] flex-1 sm:flex-none">
                       <div className="flex items-center gap-3">
                         <div className="bg-blue-600 rounded-lg p-2 flex-shrink-0">
                           <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1468,6 +1750,7 @@ export default function Home() {
                       // Success state - display check-ins
                       <CheckInTable 
                         checkIns={filteredCheckIns}
+                        allCheckIns={allFilteredCheckIns}
                         selectedLocation={selectedLocation}
                         userRole={userProfile?.role}
                         onCheckOut={handleCheckOut}
@@ -1558,9 +1841,9 @@ export default function Home() {
                     </div>
 
                     {/* Statistics Bar (Teacher) */}
-                    <div className="flex justify-end gap-3">
+                    <div className="flex flex-wrap justify-end gap-3">
                       {/* Checked In */}
-                      <div className="bg-white rounded-lg shadow-md p-3 min-w-[160px]">
+                      <div className="bg-white rounded-lg shadow-md p-3 min-w-[140px] sm:min-w-[160px] flex-1 sm:flex-none">
                         <div className="flex items-center gap-3">
                           <div className="bg-green-600 rounded-lg p-2 flex-shrink-0">
                             <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1575,7 +1858,7 @@ export default function Home() {
                       </div>
                       
                       {/* Checked Out */}
-                      <div className="bg-white rounded-lg shadow-md p-3 min-w-[160px]">
+                      <div className="bg-white rounded-lg shadow-md p-3 min-w-[140px] sm:min-w-[160px] flex-1 sm:flex-none">
                         <div className="flex items-center gap-3">
                           <div className="bg-gray-500 rounded-lg p-2 flex-shrink-0">
                             <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -1590,7 +1873,7 @@ export default function Home() {
                       </div>
                       
                       {/* Total Kids */}
-                      <div className="bg-white rounded-lg shadow-md p-3 min-w-[160px]">
+                      <div className="bg-white rounded-lg shadow-md p-3 min-w-[140px] sm:min-w-[160px] flex-1 sm:flex-none">
                         <div className="flex items-center gap-3">
                           <div className="bg-blue-600 rounded-lg p-2 flex-shrink-0">
                             <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

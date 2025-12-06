@@ -9,25 +9,31 @@
 import React, { useState } from 'react';
 import { CheckInData } from '@/lib/mockData';
 import CompactKidCard from './CompactKidCard';
+import CompactFamilyCard from './CompactFamilyCard';
 
 interface LocationGroupProps {
   locationName: string;
-  checkIns: CheckInData[];
+  checkIns: CheckInData[]; // Active check-ins (for display)
+  allCheckIns?: CheckInData[]; // All check-ins including checked-out (for accurate counts)
   onCheckOut: (securityCode: string) => void;
   onCheckIn: (securityCode: string) => void;
-  onDismiss: (securityCode: string) => void;
-  onRollOver: (securityCode: string) => void;
+  onDismiss: (securityCode: string, serviceName?: string) => void;
+  onRollOver: (securityCode: string, serviceName?: string) => void;
 }
 
 export default function LocationGroup({
   locationName,
-  checkIns,
+  checkIns, // Active check-ins for display
+  allCheckIns, // All check-ins including checked-out for counts
   onCheckOut,
   onCheckIn,
   onDismiss,
   onRollOver,
 }: LocationGroupProps) {
   const [isExpanded, setIsExpanded] = useState(true);
+
+  // Use allCheckIns for counts if provided, otherwise use checkIns
+  const checkInsForCounts = allCheckIns || checkIns;
 
   /**
    * Group check-ins by service time within this location
@@ -68,9 +74,9 @@ export default function LocationGroup({
     return parseTime(a[0]) - parseTime(b[0]);
   });
 
-  // Calculate stats
-  const totalKids = checkIns.filter(c => c.status !== 'no-show').length;
-  const checkedInKids = checkIns.filter(c => !c.checkedOut && c.status !== 'no-show').length;
+  // Calculate stats using allCheckIns for accurate totals (already filtered by location in CheckInTable)
+  const totalKids = checkInsForCounts.filter(c => c.status !== 'no-show').length;
+  const checkedInKids = checkInsForCounts.filter(c => !c.checkedOut && c.status !== 'no-show').length;
 
   return (
     <div className="mb-8">
@@ -119,9 +125,13 @@ export default function LocationGroup({
             // Extract just the time from service name
             const timeMatch = serviceName.match(/(\d{1,2}:\d{2}\s?[AP]M)/i);
             const displayTime = timeMatch ? timeMatch[1] : serviceName;
-            const activeKids = serviceCheckIns.filter(k => !k.checkedOut && k.status !== 'no-show').length;
             
-            // Group kids by classroom within this service time
+            // Get all check-ins for this service (including checked-out) for accurate counts
+            const allServiceCheckIns = checkInsForCounts.filter(c => c.serviceName === serviceName);
+            const totalServiceKids = allServiceCheckIns.filter(k => k.status !== 'no-show').length;
+            const activeKids = allServiceCheckIns.filter(k => !k.checkedOut && k.status !== 'no-show').length;
+            
+            // Group kids by classroom within this service time (use active checkIns for display)
             const classroomGroups = new Map<string, CheckInData[]>();
             serviceCheckIns.forEach(kid => {
               const classroom = kid.className || 'Unassigned';
@@ -129,6 +139,16 @@ export default function LocationGroup({
                 classroomGroups.set(classroom, []);
               }
               classroomGroups.get(classroom)!.push(kid);
+            });
+            
+            // Also get all check-ins per classroom (including checked-out) for accurate counts
+            const allClassroomGroups = new Map<string, CheckInData[]>();
+            allServiceCheckIns.forEach(kid => {
+              const classroom = kid.className || 'Unassigned';
+              if (!allClassroomGroups.has(classroom)) {
+                allClassroomGroups.set(classroom, []);
+              }
+              allClassroomGroups.get(classroom)!.push(kid);
             });
 
             // Sort classrooms by age order (youngest to oldest)
@@ -148,7 +168,7 @@ export default function LocationGroup({
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     <span className="time">{displayTime}</span>
-                    <span className="count">{serviceCheckIns.length} kids • {activeKids} still here</span>
+                    <span className="count">{totalServiceKids} kids • {activeKids} still here</span>
                   </div>
                 </div>
 
@@ -169,7 +189,10 @@ export default function LocationGroup({
                   {/* Scrollable Classrooms */}
                   <div id={`classrooms-${locationName.replace(/\s+/g, '-')}-${displayTime.replace(/\s+/g, '')}`} className="classrooms-scroll">
                     {sortedClassrooms.map(([classroom, classroomKids]) => {
-                      const activeInClass = classroomKids.filter(k => !k.checkedOut && k.status !== 'no-show').length;
+                      // Get all kids for this classroom (including checked-out) for accurate counts
+                      const allClassroomKids = allClassroomGroups.get(classroom) || [];
+                      const totalInClass = allClassroomKids.filter(k => k.status !== 'no-show').length;
+                      const activeInClass = allClassroomKids.filter(k => !k.checkedOut && k.status !== 'no-show').length;
                       
                       return (
                         <div key={classroom} className="classroom-card">
@@ -180,22 +203,54 @@ export default function LocationGroup({
                             </svg>
                             <span className="classroom-name">{classroom}</span>
                             <span className="classroom-count">
-                              {classroomKids.length} • {activeInClass} here
+                              {totalInClass} • {activeInClass} here
                             </span>
                           </div>
 
-                          {/* Kids Grid */}
+                          {/* Kids Grid - Grouped by Family */}
                           <div className="kids-grid">
-                            {classroomKids.map((kid) => (
-                              <CompactKidCard
-                                key={kid.id}
-                                kid={kid}
-                                onCheckOut={onCheckOut}
-                                onCheckIn={onCheckIn}
-                                onDismiss={onDismiss}
-                                onRollOver={onRollOver}
-                              />
-                            ))}
+                            {(() => {
+                              // Group kids by security code (siblings)
+                              const familyGroups = new Map<string, CheckInData[]>();
+                              classroomKids.forEach(kid => {
+                                const code = kid.securityCode;
+                                if (!familyGroups.has(code)) {
+                                  familyGroups.set(code, []);
+                                }
+                                familyGroups.get(code)!.push(kid);
+                              });
+
+                              // Convert to array and sort by first child's name
+                              const sortedFamilies = Array.from(familyGroups.entries()).sort((a, b) => {
+                                return a[1][0].childName.localeCompare(b[1][0].childName);
+                              });
+
+                              return sortedFamilies.map(([securityCode, siblings]) => {
+                                const isFamily = siblings.length > 1;
+                                
+                                return (
+                                  <div key={securityCode} className={`family-group ${isFamily ? 'has-siblings' : ''}`}>
+                                    {isFamily ? (
+                                      <CompactFamilyCard
+                                        siblings={siblings}
+                                        onCheckOut={onCheckOut}
+                                        onCheckIn={onCheckIn}
+                                        onDismiss={onDismiss}
+                                        onRollOver={onRollOver}
+                                      />
+                                    ) : (
+                                      <CompactKidCard
+                                        kid={siblings[0]}
+                                        onCheckOut={onCheckOut}
+                                        onCheckIn={onCheckIn}
+                                        onDismiss={onDismiss}
+                                        onRollOver={onRollOver}
+                                      />
+                                    )}
+                                  </div>
+                                );
+                              });
+                            })()}
                           </div>
                         </div>
                       );
@@ -328,6 +383,16 @@ export default function LocationGroup({
           background: white;
           border-radius: 6px;
           overflow: hidden;
+        }
+
+        .family-group {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .family-group.has-siblings {
+          border-left: 3px solid #3b82f6;
+          margin: 2px 0;
         }
 
         .scroll-arrow {

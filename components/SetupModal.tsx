@@ -4,20 +4,32 @@
  * First-time setup modal for users to select their role and classroom
  */
 
-import React, { useState } from 'react';
-import { UserRole, Classroom, saveUserProfile } from '@/lib/userProfile';
+import React, { useState, useEffect } from 'react';
+import { UserRole, Classroom, saveUserProfile, UserProfile } from '@/lib/userProfile';
 
 interface SetupModalProps {
   onComplete: () => void;
   onClose?: () => void;
   availableClassrooms: string[]; // Dynamic classrooms from API data
   availableLocations: string[]; // Dynamic locations from API data
+  currentProfile?: UserProfile | null; // Current user profile to pre-populate form
 }
 
-export default function SetupModal({ onComplete, onClose, availableClassrooms, availableLocations }: SetupModalProps) {
+export default function SetupModal({ onComplete, onClose, availableClassrooms, availableLocations, currentProfile }: SetupModalProps) {
   const [role, setRole] = useState<UserRole | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
   const [selectedClassroom, setSelectedClassroom] = useState<Classroom | null>(null);
+
+  // Pre-populate form with current profile when modal opens
+  useEffect(() => {
+    if (currentProfile) {
+      setRole(currentProfile.role);
+      if (currentProfile.role === 'teacher') {
+        setSelectedLocation(currentProfile.assignedLocation || null);
+        setSelectedClassroom(currentProfile.assignedClassroom || null);
+      }
+    }
+  }, [currentProfile]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,8 +76,12 @@ export default function SetupModal({ onComplete, onClose, availableClassrooms, a
                   <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>
               </div>
-              <h2 className="text-2xl font-bold text-gray-900">Welcome! 👋</h2>
-              <p className="text-gray-600 mt-2">Let's set up your dashboard</p>
+              <h2 className="text-2xl font-bold text-gray-900">
+                {currentProfile ? 'Update Profile' : 'Welcome! 👋'}
+              </h2>
+              <p className="text-gray-600 mt-2">
+                {currentProfile ? 'Change your role or classroom assignment' : "Let's set up your dashboard"}
+              </p>
             </div>
 
             <form onSubmit={handleSubmit} id="setup-form" className="space-y-6">

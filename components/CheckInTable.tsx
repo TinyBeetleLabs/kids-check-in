@@ -13,17 +13,19 @@ import ServiceGroup from './ServiceGroup';
 import LocationGroup from './LocationGroup';
 
 interface CheckInTableProps {
-  checkIns: CheckInData[];
+  checkIns: CheckInData[]; // Active check-ins (for display)
+  allCheckIns?: CheckInData[]; // All check-ins including checked-out (for accurate counts)
   selectedLocation?: string; // 'All' or specific location name
   userRole?: 'admin' | 'teacher'; // User role to determine view type
   onCheckOut: (securityCode: string) => void;
   onCheckIn: (securityCode: string) => void;
-  onDismiss: (securityCode: string) => void;
-  onRollOver: (securityCode: string) => void;
+  onDismiss: (securityCode: string, serviceName?: string) => void;
+  onRollOver: (securityCode: string, serviceName?: string) => void;
 }
 
 export default function CheckInTable({ 
   checkIns, 
+  allCheckIns, // All check-ins including checked-out (for accurate counts)
   selectedLocation = 'All',
   userRole = 'admin',
   onCheckOut, 
@@ -31,6 +33,8 @@ export default function CheckInTable({
   onDismiss, 
   onRollOver 
 }: CheckInTableProps) {
+  // Use allCheckIns for counts if provided, otherwise fall back to checkIns
+  const checkInsForCounts = allCheckIns || checkIns;
   /**
    * Groups check-ins by service name
    * Returns a Map with service name as key and array of check-ins as value
@@ -134,6 +138,8 @@ export default function CheckInTable({
    */
   if (isAllLocationsView) {
     const groupedByLocation = groupByLocation(checkIns);
+    // Also group allCheckIns by location for accurate counts
+    const groupedAllByLocation = checkInsForCounts ? groupByLocation(checkInsForCounts) : groupedByLocation;
     const sortedLocations = Array.from(groupedByLocation.entries()).sort((a, b) => {
       // Sort locations alphabetically
       return a[0].localeCompare(b[0]);
@@ -142,17 +148,21 @@ export default function CheckInTable({
     return (
       <div className="space-y-6">
         {/* Render each location group */}
-        {sortedLocations.map(([locationName, locationCheckIns]) => (
-          <LocationGroup
-            key={locationName}
-            locationName={locationName}
-            checkIns={locationCheckIns}
-            onCheckOut={onCheckOut}
-            onCheckIn={onCheckIn}
-            onDismiss={onDismiss}
-            onRollOver={onRollOver}
-          />
-        ))}
+        {sortedLocations.map(([locationName, locationCheckIns]) => {
+          const allLocationCheckIns = groupedAllByLocation.get(locationName) || [];
+          return (
+            <LocationGroup
+              key={locationName}
+              locationName={locationName}
+              checkIns={locationCheckIns}
+              allCheckIns={allLocationCheckIns}
+              onCheckOut={onCheckOut}
+              onCheckIn={onCheckIn}
+              onDismiss={onDismiss}
+              onRollOver={onRollOver}
+            />
+          );
+        })}
       </div>
     );
   }
