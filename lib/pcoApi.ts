@@ -826,9 +826,6 @@ export async function getLiveCheckIns(): Promise<CheckInData[]> {
                     if (item.type === 'Location' && !data.included?.find(i => i.type === 'Location' && i.id === item.id)) {
                       if (!data.included) data.included = [];
                       data.included.push(item);
-                      if (!locationsMap.has(item.id)) {
-                        locationsMap.set(item.id, item);
-                      }
                     }
                   });
                 }

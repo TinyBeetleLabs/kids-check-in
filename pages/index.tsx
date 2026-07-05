@@ -37,6 +37,7 @@ import ServiceTimeFilterRow from '@/components/ServiceTimeFilterRow';
 const FILTER_SELECT_CLASS =
   'w-full px-md py-xs rounded-pill border border-hairline font-text text-caption text-ink bg-canvas focus:outline-none focus:ring-2 focus:ring-primary-focus min-h-[36px] cursor-pointer';
 import { CheckInData, LOCATIONS } from '@/lib/mockData';
+import { fetchCheckins } from '@/lib/fetchCheckins';
 import { UserProfile, loadUserProfile, Classroom } from '@/lib/userProfile';
 
 // Refresh intervals in milliseconds
@@ -101,7 +102,7 @@ export default function Home() {
   const [selectedServiceTime, setSelectedServiceTime] = useState<string>('All');
   const [checkoutServiceTime, setCheckoutServiceTime] = useState<string>('All');
   const [refreshMode, setRefreshMode] = useState<'service' | 'off-hours'>('off-hours');
-  const [toast, setToast] = useState<{ message: string; onUndo?: () => void } | null>(null);
+  const [toast, setToast] = useState<{ message: string; onUndo?: () => void; duration?: number } | null>(null);
   const [isPulling, setIsPulling] = useState<boolean>(false);
   const [filtersLoaded, setFiltersLoaded] = useState<boolean>(false);
   const [recentCheckouts, setRecentCheckouts] = useState<RecentCheckoutItem[]>([]);
@@ -408,8 +409,8 @@ export default function Home() {
       
       console.log(`🔄 Fetching check-ins... [${currentMode} mode]`);
       
-      const response = await fetch('/api/checkins');
-      const result = await response.json();
+      const response = await fetchCheckins();
+      const result = response;
       
       if (result.success) {
         // Reset backoff on success
@@ -491,7 +492,7 @@ export default function Home() {
           return detectMultiService(finalData);
         });
         
-        setMode(result.mode);
+        setMode(result.mode ?? null);
         setLastUpdated(new Date());
         setError(null);
       } else {
@@ -1149,7 +1150,7 @@ export default function Home() {
         const updated = prevCheckIns.map(checkIn => {
           const matches = checkIn.securityCode === securityCode && checkIn.status === 'no-show';
           return matches
-            ? { ...checkIn, status: 'active', dismissTime: undefined }
+            ? { ...checkIn, status: 'active' as const, dismissTime: undefined }
             : checkIn;
         });
         
@@ -1177,7 +1178,7 @@ export default function Home() {
                         checkIn.status === 'no-show' &&
                         checkIn.dismissTime === dismissTimeToUndo;
         return matches
-          ? { ...checkIn, status: 'active', dismissTime: undefined }
+          ? { ...checkIn, status: 'active' as const, dismissTime: undefined }
           : checkIn;
       });
       
@@ -1495,7 +1496,7 @@ export default function Home() {
           content="Live classroom dashboard for Radiant Kids check-ins"
         />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <link rel="icon" href="/favicon.ico" />
+        <link rel="icon" href={`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/favicon.ico`} />
       </Head>
 
       {/* Setup Modal for first-time users */}
@@ -1995,7 +1996,7 @@ export default function Home() {
               message={toast.message}
               onUndo={toast.onUndo}
               onClose={() => setToast(null)}
-              duration={5000}
+              duration={toast.duration ?? 5000}
             />
           )}
 
