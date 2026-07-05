@@ -1503,8 +1503,8 @@ export default function Home() {
       {/* Setup Modal for first-time users */}
       {showSetupModal && (
         <SetupModal
-          onComplete={handleSetupComplete} 
-          onClose={handleModalClose}
+          onComplete={handleSetupComplete}
+          onClose={userProfile ? handleModalClose : undefined}
           availableClassrooms={availableClassrooms}
           availableLocations={availableLocations}
           currentProfile={userProfile}
@@ -1967,7 +1967,24 @@ export default function Home() {
               </div>
             </>
           ) : !userProfile ? (
-            <DashboardSkeleton />
+            showSetupModal ? (
+              <DashboardSkeleton />
+            ) : (
+              <div className="card-utility text-center py-section max-w-md mx-auto">
+                <div className="mx-auto w-14 h-14 bg-primary rounded-full flex items-center justify-center mb-md">
+                  <svg className="w-7 h-7 text-on-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                </div>
+                <h2 className="font-display text-display-md text-ink mb-xs">Set up your dashboard</h2>
+                <p className="font-text text-body text-ink-muted-48 mb-lg">
+                  Choose your role to start managing check-ins.
+                </p>
+                <button type="button" onClick={() => setShowSetupModal(true)} className="btn-primary w-full sm:w-auto">
+                  Get Started →
+                </button>
+              </div>
+            )
           ) : null}
 
           {/* Checked-Out List - Only for Teacher View (Admin view already has it in the Check-Ins tab) */}
