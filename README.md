@@ -111,7 +111,8 @@ See **[SECURITY.md](./SECURITY.md)** for comprehensive security documentation in
 1. **Clone or download this repository**
 
 ```bash
-cd /Users/valerieo/Documents/Cursor\ Apps/Radiant\ Kids\ Check-In
+git clone https://github.com/TinyBeetleLabs/RadiantKids.git
+cd RadiantKids
 ```
 
 2. **Install dependencies**

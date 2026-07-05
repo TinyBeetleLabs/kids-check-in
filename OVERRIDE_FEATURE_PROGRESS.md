@@ -54,11 +54,11 @@ Need to:
 
 ### 2. Check for Linter Errors
 Run linter on all modified files and fix any issues:
-- `/Users/valerieo/Documents/Cursor Apps/Radiant Kids Check-In/lib/checkInOverrides.ts`
-- `/Users/valerieo/Documents/Cursor Apps/Radiant Kids Check-In/components/OverrideEditor.tsx`
-- `/Users/valerieo/Documents/Cursor Apps/Radiant Kids Check-In/lib/mockData.ts`
-- `/Users/valerieo/Documents/Cursor Apps/Radiant Kids Check-In/pages/index.tsx`
-- `/Users/valerieo/Documents/Cursor Apps/Radiant Kids Check-In/components/CheckInTable.tsx`
+- `lib/checkInOverrides.ts`
+- `components/OverrideEditor.tsx`
+- `lib/mockData.ts`
+- `pages/index.tsx`
+- `components/CheckInTable.tsx`
 
 ### 3. Test the Feature
 - Refresh the dashboard

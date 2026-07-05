@@ -2,9 +2,10 @@
 🚀 RADIANT KIDS CHECK-IN DASHBOARD - QUICK START
 ═══════════════════════════════════════════════════════════════
 
-📦 STEP 1: INSTALL DEPENDENCIES
+📦 STEP 1: CLONE AND INSTALL DEPENDENCIES
 ────────────────────────────────────────────────────────────────
-cd "/Users/valerieo/Documents/Cursor Apps/Radiant Kids Check-In"
+git clone https://github.com/TinyBeetleLabs/RadiantKids.git
+cd RadiantKids
 npm install
 
 ⏱️ This will take 1-2 minutes...
