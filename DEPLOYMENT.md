@@ -1,6 +1,6 @@
-# 🚀 Deployment Guide
+# Deployment Guide
 
-Comprehensive guide for deploying your Radiant Kids Check-In Dashboard to production.
+Comprehensive guide for deploying Kids Check-In to production.
 
 ---
 
@@ -41,10 +41,10 @@ git init
 git add .
 
 # Commit
-git commit -m "Initial commit: Radiant Kids Check-In Dashboard"
+git commit -m "Initial commit: Kids Check-In"
 
 # Create a GitHub repository and push
-git remote add origin https://github.com/your-org/radiant-kids-checkin.git
+git remote add origin https://github.com/your-org/kids-check-in.git
 git branch -M main
 git push -u origin main
 ```
@@ -94,7 +94,7 @@ Once deployed, Vercel provides:
 
 2. **Set up custom domain (optional)**
    - Go to Vercel dashboard → Your project → Settings → Domains
-   - Add your custom domain (e.g., `checkin.radiantchurch.com`)
+   - Add your custom domain (e.g., `checkin.yourchurch.org`)
    - Update DNS records as instructed
 
 3. **Monitor usage**
@@ -174,14 +174,14 @@ services:
 
 ```bash
 # Build the image
-docker build -t radiant-kids-checkin .
+docker build -t kids-check-in .
 
 # Run the container
 docker run -p 3000:3000 \
   -e USE_MOCK_DATA=false \
   -e PCO_CLIENT_ID=your_id \
   -e PCO_CLIENT_SECRET=your_secret \
-  radiant-kids-checkin
+  kids-check-in
 
 # Or use docker-compose
 docker-compose up -d
@@ -213,11 +213,11 @@ docker-compose up -d
 
 ```bash
 # Build container
-gcloud builds submit --tag gcr.io/PROJECT_ID/radiant-kids-checkin
+gcloud builds submit --tag gcr.io/PROJECT_ID/kids-check-in
 
 # Deploy
-gcloud run deploy radiant-kids-checkin \
-  --image gcr.io/PROJECT_ID/radiant-kids-checkin \
+gcloud run deploy kids-check-in \
+  --image gcr.io/PROJECT_ID/kids-check-in \
   --platform managed \
   --set-env-vars USE_MOCK_DATA=false,PCO_CLIENT_ID=xxx,PCO_CLIENT_SECRET=xxx
 ```

@@ -11,7 +11,7 @@ export interface UserProfile {
   name: string;
   role: UserRole;
   assignedClassroom?: Classroom;
-  assignedLocation?: string; // Location name (e.g., "South Tampa", "Heights")
+  assignedLocation?: string; // Campus name (e.g. "Main Campus", "North Campus")
 }
 
 /**

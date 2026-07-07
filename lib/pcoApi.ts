@@ -124,7 +124,7 @@ interface PCOEventLocation {
   type: "EventLocation";
   id: string;
   attributes: {
-    name: string; // Classroom name like "Heros", "Legends", etc.
+    name: string; // Classroom name (e.g. Nursery, Toddlers, Preschool)
     label?: string; // Alternative attribute name
     classroom?: string; // Another possible attribute name
   };
@@ -1923,7 +1923,7 @@ function transformPCOData(pcoData: PCOApiResponse): CheckInData[] {
       console.warn(`⚠️ CheckIn ${checkIn.id} has event_period but no event_time and no serviceTime was parsed from ${eventPeriod.attributes.starts_at}`);
     }
     
-    // Extract campus name from event name (e.g., "Sunday Services – South Tampa" -> "South Tampa")
+    // Extract campus name from event name (e.g. "Sunday Check-In – Main Campus" -> "Main Campus")
     // Split on en dash "–" or regular dash "-"
     let campusName: string | undefined;
     if (eventName) {

@@ -1,5 +1,5 @@
 /**
- * Security Configuration for Radiant Kids Check-In Dashboard
+ * Security Configuration for Kids Check-In
  * 
  * This file contains comprehensive security headers and policies to protect:
  * - Children's personal information

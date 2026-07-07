@@ -1,7 +1,7 @@
 {
-  "name": "radiant-kids-checkin-dashboard",
+  "name": "kids-check-in",
   "version": "1.0.0",
-  "description": "Secure classroom dashboard for displaying live check-ins from Planning Center",
+  "description": "Secure classroom dashboard for displaying live kids check-ins from Planning Center",
   "private": true,
   "scripts": {
     "dev": "next dev",

@@ -1,4 +1,4 @@
-# 🌟 Radiant Kids Check-In Dashboard
+# Kids Check-In
 
 A secure, real-time classroom dashboard for displaying children's check-ins from Planning Center Check-Ins API. Built with Next.js, TypeScript, and TailwindCSS.
 
@@ -111,8 +111,8 @@ See **[SECURITY.md](./SECURITY.md)** for comprehensive security documentation in
 1. **Clone or download this repository**
 
 ```bash
-git clone https://github.com/TinyBeetleLabs/RadiantKids.git
-cd RadiantKids
+git clone https://github.com/TinyBeetleLabs/kids-check-in.git
+cd kids-check-in
 ```
 
 2. **Install dependencies**
@@ -323,7 +323,7 @@ npm run dev
 ## 📁 Folder Structure
 
 ```
-radiant-kids-checkin-dashboard/
+kids-check-in/
 ├── .env.local              # Environment variables (not in git)
 ├── .env.example            # Environment template
 ├── .gitignore              # Git ignore rules
@@ -551,13 +551,13 @@ For issues or questions:
 
 ## 📄 License
 
-This project is private and proprietary to Radiant Church.
+MIT — open source demo. Live deployments with real children's data should remain private.
 
 ---
 
 ## 🎉 Credits
 
-Built with ❤️ for Radiant Kids Ministry
+Built for kids ministry, camps, daycare, and volunteer check-in workflows.
 
 **Technologies Used**:
 - [Next.js](https://nextjs.org/)

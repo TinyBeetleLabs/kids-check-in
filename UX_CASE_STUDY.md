@@ -1,4 +1,4 @@
-# 🎨 Radiant Kids Check-In Dashboard - UX Case Study
+# Kids Check-In — UX Case Study
 
 > A secure, real-time classroom dashboard for displaying children's check-ins with a focus on accessibility, efficiency, and data privacy.
 
@@ -50,7 +50,7 @@ Church staff needed a way to display live check-in data for children's ministry 
 
 4. **Information Architecture** 🗂️
    - Multiple service times (8:00 AM, 9:30 AM, 11:00 AM, 12:30 PM Sunday; 6:00 PM - 8:30 PM Wednesday)
-   - 5 classrooms (Dreamers, Explorers, Heros, Legends, Club 456)
+   - 5 classrooms (Nursery, Toddlers, Preschool, Pre-K, Elementary)
    - Sibling groups need to be together
    - Special indicators (first-timers, birthdays)
 

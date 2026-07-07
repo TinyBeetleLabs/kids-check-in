@@ -3,7 +3,7 @@
 const { securityHeaders } = require('./next.config.security');
 
 const isGithubPages = process.env.GITHUB_PAGES === 'true';
-const githubPagesBasePath = '/RadiantKids';
+const githubPagesBasePath = '/kids-check-in';
 
 const nextConfig = {
   reactStrictMode: true,
@@ -16,7 +16,7 @@ const nextConfig = {
     ignoreBuildErrors: isGithubPages,
   },
 
-  // GitHub Pages: static export at https://tinybeetlelabs.github.io/RadiantKids/
+  // GitHub Pages: static export at https://tinybeetlelabs.github.io/kids-check-in/
   ...(isGithubPages && {
     output: 'export',
     basePath: githubPagesBasePath,

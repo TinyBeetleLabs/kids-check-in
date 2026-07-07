@@ -8,6 +8,7 @@
 
 import React, { useState } from 'react';
 import { CheckInData } from '@/lib/mockData';
+import { sortClassrooms } from '@/lib/classrooms';
 import CompactKidCard from './CompactKidCard';
 import CompactFamilyCard from './CompactFamilyCard';
 
@@ -151,13 +152,9 @@ export default function LocationGroup({
               allClassroomGroups.get(classroom)!.push(kid);
             });
 
-            // Sort classrooms by age order (youngest to oldest)
-            const classroomOrder = ['Dreamers', 'Explorers', 'Heros', 'Legends', 'Club 456', 'Unassigned'];
-            const sortedClassrooms = Array.from(classroomGroups.entries()).sort((a, b) => {
-              const indexA = classroomOrder.indexOf(a[0]);
-              const indexB = classroomOrder.indexOf(b[0]);
-              return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
-            });
+            const sortedClassrooms = sortClassrooms(
+              Array.from(classroomGroups.keys())
+            ).map((classroom) => [classroom, classroomGroups.get(classroom)!] as const);
             
             return (
               <div key={serviceName} className="service-section-main">

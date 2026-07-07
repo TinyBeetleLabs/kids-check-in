@@ -1,7 +1,7 @@
 /**
  * Main Dashboard Page
  * 
- * This is the primary interface for the Radiant Kids Check-In Dashboard.
+ * Main Dashboard Page — Kids Check-In
  * 
  * FEATURES:
  * - Displays live check-ins grouped by service time
@@ -37,7 +37,8 @@ import DashboardSkeleton from '@/components/DashboardSkeleton';
 
 const FILTER_SELECT_CLASS =
   'w-full px-md py-xs rounded-pill border border-hairline font-text text-caption text-ink bg-canvas focus:outline-none focus:ring-2 focus:ring-primary-focus min-h-[36px] cursor-pointer';
-import { CheckInData, LOCATIONS } from '@/lib/mockData';
+import { CheckInData } from '@/lib/mockData';
+import { sortClassrooms } from '@/lib/classrooms';
 import { fetchCheckins } from '@/lib/fetchCheckins';
 import { UserProfile, loadUserProfile, Classroom } from '@/lib/userProfile';
 
@@ -244,10 +245,7 @@ export default function Home() {
           if (userProfile.role === 'teacher' && userProfile.assignedClassroom) {
             setSelectedClassroom(userProfile.assignedClassroom);
           } else if (savedClassroom && savedClassroom !== 'All') {
-            // Validate saved classroom exists (check against standard classrooms too since they're always available)
-            const standardClassrooms = ['Dreamers', 'Explorers', 'Heros', 'Legends', 'Club 456'];
-            const classroomExists = checkIns.some(c => c.className === savedClassroom) || 
-                                   standardClassrooms.includes(savedClassroom);
+            const classroomExists = checkIns.some((c) => c.className === savedClassroom);
             if (classroomExists) {
               setSelectedClassroom(savedClassroom);
             } else {
@@ -618,26 +616,14 @@ export default function Home() {
    */
   const availableClassrooms = React.useMemo(() => {
     const classrooms = new Set<string>();
-    
-    // Add classrooms from actual check-ins
-    checkIns.forEach(checkIn => {
+
+    checkIns.forEach((checkIn) => {
       if (checkIn.className) {
         classrooms.add(checkIn.className);
       }
     });
-    
-    // Since all campuses share the same event locations, also include all standard classrooms
-    // This ensures dropdown shows "Dreamers (0 kids)" even if no kids are checked in
-    const standardClassrooms = ['Dreamers', 'Explorers', 'Heros', 'Legends', 'Club 456'];
-    standardClassrooms.forEach(room => classrooms.add(room));
-    
-    // Sort by age order (youngest to oldest)
-    const classroomOrder = ['Dreamers', 'Explorers', 'Heros', 'Legends', 'Club 456'];
-    return Array.from(classrooms).sort((a, b) => {
-      const indexA = classroomOrder.indexOf(a);
-      const indexB = classroomOrder.indexOf(b);
-      return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
-    });
+
+    return sortClassrooms(Array.from(classrooms));
   }, [checkIns]);
 
   /**
@@ -1491,10 +1477,10 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>Radiant Kids Check-In Dashboard</title>
+        <title>Kids Check-In</title>
         <meta
           name="description"
-          content="Live classroom dashboard for Radiant Kids check-ins"
+          content="Live classroom dashboard for kids check-ins"
         />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href={`${process.env.NEXT_PUBLIC_BASE_PATH || ''}/favicon.ico`} />
@@ -1533,8 +1519,8 @@ export default function Home() {
         <div className="max-w-content mx-auto relative z-10">
           {/* Global nav */}
           <header className="global-nav flex items-center justify-between sticky top-0 z-30">
-            <span className="font-text text-nav-link text-on-dark tracking-tight">Radiant Kids</span>
-            <span className="font-text text-fine-print text-body-muted hidden sm:inline">Check-In Dashboard</span>
+            <span className="font-text text-nav-link text-on-dark tracking-tight">Kids Check-In</span>
+            <span className="font-text text-fine-print text-body-muted hidden sm:inline">Dashboard</span>
           </header>
 
           {/* Sub-nav + page content — softened when setup modal is open */}

@@ -1,6 +1,4 @@
-# 🚀 Quick Setup Guide
-
-Follow these steps to get your Radiant Kids Check-In Dashboard running in minutes!
+# Kids Check-In — Quick Setup Guide
 
 ---
 
@@ -64,7 +62,7 @@ You should see the dashboard with sample check-ins! 🎉
 1. Go to [https://api.planningcenteronline.com/oauth/applications](https://api.planningcenteronline.com/oauth/applications)
 2. Log in with your Planning Center account
 3. Click "New Personal Access Token"
-4. Give it a name: "Radiant Kids Dashboard"
+4. Give it a name: "Kids Check-In Dashboard"
 5. Copy the **Application ID** → This is your `PCO_CLIENT_ID`
 6. Copy the **Secret** → This is your `PCO_CLIENT_SECRET`
 
@@ -73,7 +71,7 @@ You should see the dashboard with sample check-ins! 🎉
 1. Go to [https://api.planningcenteronline.com/oauth/applications](https://api.planningcenteronline.com/oauth/applications)
 2. Click "New Application"
 3. Fill in the details:
-   - **Name**: Radiant Kids Dashboard
+   - **Name**: Kids Check-In Dashboard
    - **Description**: Classroom check-in display
    - **Website**: Your church website
 4. Copy the credentials as above

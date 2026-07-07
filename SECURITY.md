@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Radiant Kids Check-In Dashboard handles **sensitive children's information** including names, medical notes, and check-in data. This document outlines the comprehensive security measures implemented to protect this data.
+The Kids Check-In dashboard handles **sensitive children's information** including names, medical notes, and check-in data. This document outlines the comprehensive security measures implemented to protect this data.
 
 ---
 
