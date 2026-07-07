@@ -4,15 +4,12 @@
 
 import React, { useMemo } from 'react';
 import { CheckInData } from '@/lib/mockData';
-import {
-  CLASSROOM_DISPLAY_CAPACITY,
-  getClassroomTheme,
-  sortClassrooms,
-} from '@/lib/classrooms';
+import { getClassroomTheme, sortClassrooms } from '@/lib/classrooms';
 
 interface AdminStatsProps {
   checkIns: CheckInData[];
   onClassroomClick: (classroom: string) => void;
+  onServiceTimeClick: (serviceTime: string) => void;
   selectedLocation?: string;
   onLocationChange?: (location: string) => void;
   locationOptions?: string[];
@@ -27,6 +24,7 @@ interface ServiceStats {
 export default function AdminStats({
   checkIns,
   onClassroomClick,
+  onServiceTimeClick,
   selectedLocation = 'All',
   onLocationChange,
   locationOptions = [],
@@ -40,7 +38,7 @@ export default function AdminStats({
 
   const extractServiceTime = (serviceName: string): string => {
     const timeMatch = serviceName.match(/(\d{1,2}:\d{2}\s?[AP]M)/i);
-    if (timeMatch) return timeMatch[1];
+    if (timeMatch) return timeMatch[1].toUpperCase();
     return serviceName;
   };
 
@@ -48,7 +46,9 @@ export default function AdminStats({
     const stats: Record<string, ServiceStats> = {};
     filteredCheckIns.forEach((kid) => {
       if (kid.status === 'no-show') return;
-      const serviceTime = kid.serviceTime || extractServiceTime(kid.serviceName);
+      const serviceTime = kid.serviceTime
+        ? kid.serviceTime.toUpperCase()
+        : extractServiceTime(kid.serviceName);
       if (!stats[serviceTime]) {
         stats[serviceTime] = { total: 0, checkedIn: 0, checkedOut: 0 };
       }
@@ -84,6 +84,17 @@ export default function AdminStats({
   const selectClass =
     'w-full md:w-auto px-md py-xs rounded-pill border border-hairline font-text text-caption text-ink bg-canvas focus:outline-none focus:ring-2 focus:ring-primary-focus cursor-pointer min-h-[38px]';
 
+  const parseTime = (time: string) => {
+    const match = time.match(/(\d{1,2}):(\d{2})\s?([AP]M)/i);
+    if (!match) return 0;
+    let hours = parseInt(match[1]);
+    const minutes = parseInt(match[2]);
+    const period = match[3].toUpperCase();
+    if (period === 'PM' && hours !== 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+    return hours * 60 + minutes;
+  };
+
   return (
     <div className="fade-in space-y-md">
       {onLocationChange && locationOptions.length > 0 && (
@@ -117,7 +128,6 @@ export default function AdminStats({
         </div>
       )}
 
-      {/* Summary stat row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-sm">
         <div className="stat-card border-l-4 border-l-indigo-500">
           <div className="font-text text-fine-print text-ink-muted-48 uppercase tracking-wide">Total checked in</div>
@@ -133,7 +143,6 @@ export default function AdminStats({
         </div>
       </div>
 
-      {/* Classroom cards grid */}
       <div>
         <h3 className="font-text text-caption-strong text-ink mb-sm flex items-center gap-xs">
           <svg className="w-4 h-4 text-primary shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
@@ -148,8 +157,7 @@ export default function AdminStats({
           {sortedClassrooms.map((classroom) => {
             const stats = classroomStats[classroom];
             const theme = getClassroomTheme(classroom);
-            const pct = Math.min(100, (stats.checkedIn / CLASSROOM_DISPLAY_CAPACITY) * 100);
-            const isFull = stats.checkedIn >= CLASSROOM_DISPLAY_CAPACITY;
+            const pct = stats.total > 0 ? Math.round((stats.checkedIn / stats.total) * 100) : 0;
 
             return (
               <button
@@ -160,23 +168,18 @@ export default function AdminStats({
                 style={{ backgroundColor: theme.bg }}
               >
                 <div className="px-md pt-md pb-sm">
-                  <div className="flex items-start justify-between gap-xs">
-                    <span className="font-text text-caption-strong" style={{ color: theme.text }}>
-                      {classroom}
-                    </span>
-                    {isFull && (
-                      <span className="font-text text-fine-print font-bold uppercase px-xs py-xxs rounded-sm bg-white/80 text-red-600">
-                        Full
-                      </span>
-                    )}
-                  </div>
+                  <span className="font-text text-caption-strong" style={{ color: theme.text }}>
+                    {classroom}
+                  </span>
                   <div className="mt-sm">
                     <span className="font-display text-[28px] font-bold leading-none" style={{ color: theme.accent }}>
                       {stats.checkedIn}
                     </span>
-                    <span className="font-text text-caption text-ink-muted-48"> / {CLASSROOM_DISPLAY_CAPACITY}</span>
+                    <span className="font-text text-caption text-ink-muted-48"> / {stats.total}</span>
                   </div>
-                  <div className="font-text text-fine-print text-ink-muted-48 mt-xxs">checked in</div>
+                  <div className="font-text text-fine-print text-ink-muted-48 mt-xxs">
+                    still here · {stats.checkedOut} out
+                  </div>
                 </div>
                 <div className="h-1.5 bg-white/60 mx-md mb-md rounded-pill overflow-hidden">
                   <div
@@ -190,7 +193,6 @@ export default function AdminStats({
         </div>
       </div>
 
-      {/* Service times */}
       <div className="card-utility">
         <h3 className="font-text text-caption-strong text-ink mb-sm flex items-center gap-xs">
           <svg className="w-4 h-4 text-primary shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
@@ -200,27 +202,20 @@ export default function AdminStats({
         </h3>
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-xs">
           {Object.entries(serviceStats)
-            .sort(([timeA], [timeB]) => {
-              const parseTime = (time: string) => {
-                const match = time.match(/(\d{1,2}):(\d{2})\s?([AP]M)/i);
-                if (!match) return 0;
-                let hours = parseInt(match[1]);
-                const minutes = parseInt(match[2]);
-                const period = match[3].toUpperCase();
-                if (period === 'PM' && hours !== 12) hours += 12;
-                if (period === 'AM' && hours === 12) hours = 0;
-                return hours * 60 + minutes;
-              };
-              return parseTime(timeA) - parseTime(timeB);
-            })
+            .sort(([timeA], [timeB]) => parseTime(timeA) - parseTime(timeB))
             .map(([serviceTime, stats]) => (
-              <div key={serviceTime} className="p-sm bg-surface-pearl rounded-md border border-hairline/60">
+              <button
+                key={serviceTime}
+                type="button"
+                onClick={() => onServiceTimeClick(serviceTime)}
+                className="text-left p-sm bg-surface-pearl rounded-md border border-hairline/60 hover:border-primary/40 hover:bg-primary/5 transition-all active:scale-[0.98] cursor-pointer"
+              >
                 <div className="font-text text-caption-strong text-ink">{serviceTime}</div>
                 <div className="font-display text-xl font-bold text-primary mt-xxs">{stats.checkedIn}</div>
                 <div className="font-text text-fine-print text-ink-muted-48">
                   here · {stats.checkedOut} out
                 </div>
-              </div>
+              </button>
             ))}
         </div>
       </div>

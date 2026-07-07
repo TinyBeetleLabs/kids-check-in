@@ -1624,7 +1624,14 @@ export default function Home() {
                   onClassroomClick={(classroom) => {
                     setSelectedClassroom(classroom);
                     setActiveAdminTab('checkins');
-                    // Scroll to top after switching tabs
+                    setTimeout(() => {
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }, 100);
+                  }}
+                  onServiceTimeClick={(serviceTime) => {
+                    setSelectedServiceTime(serviceTime.toUpperCase());
+                    setActiveAdminTab('checkins');
+                    localStorage.setItem('selectedServiceTime', serviceTime.toUpperCase());
                     setTimeout(() => {
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }, 100);

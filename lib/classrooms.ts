@@ -13,9 +13,6 @@ export const CLASSROOM_ORDER = [
 
 export type StandardClassroom = (typeof CLASSROOM_ORDER)[number];
 
-/** Demo capacity for progress bars (not enforced — display only) */
-export const CLASSROOM_DISPLAY_CAPACITY = 16;
-
 export type ClassroomTheme = {
   accent: string;
   bg: string;
