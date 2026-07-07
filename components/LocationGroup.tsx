@@ -8,7 +8,7 @@
 
 import React, { useState } from 'react';
 import { CheckInData } from '@/lib/mockData';
-import { sortClassrooms } from '@/lib/classrooms';
+import { sortClassrooms, getClassroomTheme } from '@/lib/classrooms';
 import CompactKidCard from './CompactKidCard';
 import CompactFamilyCard from './CompactFamilyCard';
 
@@ -193,12 +193,19 @@ export default function LocationGroup({
                       
                       return (
                         <div key={classroom} className="classroom-card">
-                          {/* Classroom Header */}
-                          <div className="classroom-header">
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <div
+                            className="classroom-header"
+                            style={{
+                              backgroundColor: getClassroomTheme(classroom).bg,
+                              borderColor: getClassroomTheme(classroom).accent + '33',
+                            }}
+                          >
+                            <svg className="w-4 h-4 shrink-0" style={{ color: getClassroomTheme(classroom).accent }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                             </svg>
-                            <span className="classroom-name">{classroom}</span>
+                            <span className="classroom-name" style={{ color: getClassroomTheme(classroom).text }}>
+                              {classroom}
+                            </span>
                             <span className="classroom-count">
                               {totalInClass} • {activeInClass} here
                             </span>
@@ -275,9 +282,10 @@ export default function LocationGroup({
       <style jsx>{`
         .service-section-main {
           background: white;
-          border-radius: 10px;
+          border-radius: 16px;
           padding: 16px;
-          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+          box-shadow: 0 2px 12px rgba(30, 42, 74, 0.08);
+          border: 1px solid #e2e8f0;
         }
 
         .service-header-main {
@@ -288,20 +296,20 @@ export default function LocationGroup({
           display: flex;
           align-items: center;
           gap: 12px;
-          background: white;
-          border: 2px solid #e5e7eb;
-          padding: 14px 20px;
-          border-radius: 8px;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          padding: 12px 18px;
+          border-radius: 12px;
         }
 
         .service-time-badge-main svg {
-          color: #3b82f6;
+          color: #6366f1;
         }
 
         .service-time-badge-main .time {
-          font-size: 20px;
+          font-size: 18px;
           font-weight: 700;
-          color: #1f2937;
+          color: #1e293b;
         }
 
         .service-time-badge-main .count {
@@ -339,9 +347,9 @@ export default function LocationGroup({
           max-width: 280px;
           scroll-snap-align: start;
           background: white;
-          border: 2px solid #e5e7eb;
-          border-radius: 10px;
-          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+          border: 1px solid #e2e8f0;
+          border-radius: 14px;
+          box-shadow: 0 2px 8px rgba(30, 42, 74, 0.06);
           display: flex;
           flex-direction: column;
           overflow: hidden;
@@ -352,20 +360,8 @@ export default function LocationGroup({
           align-items: center;
           gap: 8px;
           padding: 10px 14px;
-          background: white;
-          border-bottom: 2px solid #e5e7eb;
+          border-bottom: 1px solid rgba(0, 0, 0, 0.06);
           font-size: 13px;
-        }
-
-        .classroom-header svg {
-          color: #10b981;
-        }
-
-        .classroom-name {
-          font-weight: 700;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-          color: #1f2937;
         }
 
         .classroom-count {

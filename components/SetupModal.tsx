@@ -82,7 +82,7 @@ export default function SetupModal({
 
           <div className="overflow-y-auto flex-1 px-xl pt-xl pb-md">
             <div className="text-center mb-lg">
-              <div className="mx-auto w-16 h-16 bg-primary rounded-full flex items-center justify-center mb-md">
+              <div className="mx-auto w-16 h-16 rounded-2xl flex items-center justify-center mb-md bg-gradient-to-br from-primary to-violet-500 shadow-card">
                 <svg className="w-8 h-8 text-on-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                 </svg>

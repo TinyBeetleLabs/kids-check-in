@@ -85,6 +85,13 @@ const getRefreshInterval = (): number => {
   return isServiceTime() ? REFRESH_INTERVAL_SERVICE_TIME : REFRESH_INTERVAL_OFF_HOURS;
 };
 
+const getGreeting = (): string => {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+};
+
 export default function Home() {
   // User profile state
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -1519,7 +1526,12 @@ export default function Home() {
         <div className="max-w-content mx-auto relative z-10">
           {/* Global nav */}
           <header className="global-nav flex items-center justify-between sticky top-0 z-30">
-            <span className="font-text text-nav-link text-on-dark tracking-tight">Kids Check-In</span>
+            <div className="flex items-center gap-sm">
+              <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary text-on-primary text-base leading-none" aria-hidden="true">
+                ✦
+              </span>
+              <span className="font-text text-nav-link text-on-dark tracking-tight">Kids Check-In</span>
+            </div>
             <span className="font-text text-fine-print text-body-muted hidden sm:inline">Dashboard</span>
           </header>
 
@@ -1529,7 +1541,7 @@ export default function Home() {
               showSetupModal ? 'blur-[2px] opacity-60 pointer-events-none select-none' : ''
             }`}
           >
-          <div className="sub-nav-frosted mb-lg">
+          <div className="sub-nav-frosted mb-md">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-md">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-sm flex-wrap">
@@ -1537,7 +1549,7 @@ export default function Home() {
                     className="font-display text-display-md text-ink cursor-pointer select-none"
                     onClick={handleTitleClick}
                   >
-                    Check-In
+                    {userProfile ? `${getGreeting()}!` : 'Check-In'}
                   </h1>
                   {showResetButton && (
                     <button
@@ -1553,12 +1565,24 @@ export default function Home() {
                     )}
                   </div>
                 {userProfile && (
-                  <div className="flex items-center gap-sm flex-wrap mt-xs">
+                  <p className="font-text text-caption text-ink-muted-48 mt-xs">
+                    {userProfile.role === 'teacher' && userProfile.assignedClassroom
+                      ? `${userProfile.assignedClassroom}${userProfile.assignedLocation ? ` · ${userProfile.assignedLocation}` : ''}`
+                      : userProfile.role === 'admin'
+                        ? "Here's what's happening across your campuses"
+                        : 'Live classroom attendance'}
+                  </p>
+                )}
+                {!userProfile && (
+                  <p className="font-text text-body text-ink-muted-48 mt-xs">Set up your dashboard to get started</p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-sm flex-wrap shrink-0">
+                {userProfile && (
+                  <div className="hidden md:flex items-center gap-xs">
                     {userProfile.role === 'teacher' && userProfile.assignedClassroom && (
-                      <span className="btn-primary !py-xxs !px-sm text-caption-strong inline-flex items-center gap-xxs">
-                        <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-                          <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
-                        </svg>
+                      <span className="chip-option !py-xxs !px-sm text-fine-print !border-primary/30 !text-primary !bg-primary/5">
                         {userProfile.assignedClassroom}
                       </span>
                     )}
@@ -1567,12 +1591,6 @@ export default function Home() {
                     </button>
                   </div>
                 )}
-                {!userProfile && (
-                  <p className="font-text text-body text-ink-muted-48 mt-xs">Live classroom attendance</p>
-                )}
-              </div>
-
-              <div className="flex items-center gap-sm flex-wrap shrink-0">
                 {mode && (
                   <span className="chip-option !py-xxs !px-sm text-fine-print">
                     {mode === 'mock' ? 'Mock' : 'Live'}
@@ -1619,7 +1637,7 @@ export default function Home() {
             <>
               {/* Tab Navigation */}
               <div className="mb-md">
-                <nav className="flex gap-xs p-xs bg-canvas rounded-lg border border-hairline">
+                <nav className="admin-tab-nav">
                     <button
                       type="button"
                       onClick={() => setActiveAdminTab('overview')}
@@ -1761,7 +1779,7 @@ export default function Home() {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-lg">
+              <div className="space-y-md">
                 <ServiceTimeFilterRow
                   serviceTimes={serviceTimes}
                   selectedServiceTime={selectedServiceTime}
@@ -1871,7 +1889,7 @@ export default function Home() {
               {/* Filters and Stats */}
               <div id="filters-section" className="mb-md">
                 <div className="card-utility !p-md">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-lg">
+                  <div className="space-y-md">
                     <ServiceTimeFilterRow
                       serviceTimes={serviceTimes}
                       selectedServiceTime={selectedServiceTime}

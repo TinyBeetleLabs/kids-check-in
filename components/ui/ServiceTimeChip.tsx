@@ -23,15 +23,15 @@ export default function ServiceTimeChip({
       aria-pressed={selected}
       className={
         selected
-          ? 'chip-option-selected font-text text-caption-strong shrink-0 whitespace-nowrap'
+          ? 'chip-option-selected shrink-0 whitespace-nowrap shadow-sm'
           : 'chip-option shrink-0 whitespace-nowrap'
       }
     >
       {label}
       {count !== undefined && (
         <span
-          className={`ml-xs px-xs py-xxs rounded-pill text-fine-print ${
-            selected ? 'bg-primary/10 text-primary' : 'bg-canvas-parchment text-ink-muted-80'
+          className={`ml-xs px-xs py-xxs rounded-pill text-fine-print font-text ${
+            selected ? 'bg-white/25 text-on-primary' : 'bg-surface-pearl text-ink-muted-80'
           }`}
         >
           {count}

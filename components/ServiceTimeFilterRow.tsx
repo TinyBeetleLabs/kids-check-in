@@ -18,15 +18,15 @@ export default function ServiceTimeFilterRow({
 }: ServiceTimeFilterRowProps) {
   return (
     <div>
-      <h3 className="font-text text-caption-strong text-ink mb-xs flex items-center gap-xs">
+      <h3 className="font-text text-caption-strong text-ink mb-sm flex items-center gap-xs">
         <svg className="w-4 h-4 text-primary shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
           <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
         </svg>
-        Service Time
+        Service time
       </h3>
       <div
         ref={scrollRef}
-        className="flex gap-xs overflow-x-auto pb-sm -mx-xs px-xs"
+        className="flex gap-xs overflow-x-auto pb-xs -mx-xs px-xs"
         style={{ scrollbarWidth: 'thin' }}
       >
         {serviceTimes.map((time) => (
