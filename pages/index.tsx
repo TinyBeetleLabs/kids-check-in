@@ -34,6 +34,7 @@ import RecentCheckoutsTray, { RecentCheckoutItem } from '@/components/RecentChec
 import StatsBar from '@/components/StatsBar';
 import ServiceTimeFilterRow from '@/components/ServiceTimeFilterRow';
 import DashboardSkeleton from '@/components/DashboardSkeleton';
+import AppSidebar from '@/components/AppSidebar';
 
 const FILTER_SELECT_CLASS =
   'w-full px-md py-xs rounded-pill border border-hairline font-text text-caption text-ink bg-canvas focus:outline-none focus:ring-2 focus:ring-primary-focus min-h-[36px] cursor-pointer';
@@ -85,17 +86,12 @@ const getRefreshInterval = (): number => {
   return isServiceTime() ? REFRESH_INTERVAL_SERVICE_TIME : REFRESH_INTERVAL_OFF_HOURS;
 };
 
-const getGreeting = (): string => {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
-};
 
 export default function Home() {
   // User profile state
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [showSetupModal, setShowSetupModal] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   
   // Admin tab state
   const [activeAdminTab, setActiveAdminTab] = useState<'overview' | 'checkins'>('overview');
@@ -1384,9 +1380,9 @@ export default function Home() {
 
   /**
    * Hidden system reset Easter egg
-   * Click title 5 times to reveal reset button
+   * Click "Kids Check-In" brand 5 times to reveal reset button
    */
-  const handleTitleClick = useCallback(() => {
+  const handleBrandClick = useCallback(() => {
     setTitleClickCount(prev => {
       const newCount = prev + 1;
       
@@ -1505,7 +1501,7 @@ export default function Home() {
       )}
 
       <main
-        className="min-h-screen bg-canvas-parchment relative"
+        className="min-h-screen bg-canvas-parchment relative flex"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -1523,76 +1519,71 @@ export default function Home() {
           </div>
         )}
 
-        <div className="max-w-content mx-auto relative z-10">
-          {/* Global nav */}
-          <header className="global-nav flex items-center justify-between sticky top-0 z-30">
-            <div className="flex items-center gap-sm">
-              <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary text-on-primary text-base leading-none" aria-hidden="true">
-                ✦
-              </span>
-              <span className="font-text text-nav-link text-on-dark tracking-tight">Kids Check-In</span>
-            </div>
-            <span className="font-text text-fine-print text-body-muted hidden sm:inline">Dashboard</span>
-          </header>
+        <AppSidebar
+          userProfile={userProfile}
+          activeAdminTab={activeAdminTab}
+          onAdminTabChange={(tab) => {
+            setActiveAdminTab(tab);
+            setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 100);
+          }}
+          activeCheckInCount={checkIns.filter((c) => !c.checkedOut).length}
+          onBrandClick={handleBrandClick}
+          showResetButton={showResetButton}
+          onSystemReset={handleSystemReset}
+          onChangeProfile={handleChangeProfile}
+          mode={mode}
+          mobileOpen={sidebarOpen}
+          onMobileClose={() => setSidebarOpen(false)}
+        />
 
-          {/* Sub-nav + page content — softened when setup modal is open */}
-          <div
-            className={`transition-[filter,opacity] duration-300 ${
-              showSetupModal ? 'blur-[2px] opacity-60 pointer-events-none select-none' : ''
-            }`}
-          >
-          <div className="sub-nav-frosted mb-md">
+        <div
+          className={`flex-1 flex flex-col min-w-0 transition-[filter,opacity] duration-300 ${
+            showSetupModal ? 'blur-[2px] opacity-60 pointer-events-none select-none' : ''
+          }`}
+        >
+          {/* Page header */}
+          <div className="sub-nav-frosted !mx-md sm:!mx-lg !mt-md !mb-md">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-md">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-sm flex-wrap">
-                    <h1
-                    className="font-display text-display-md text-ink cursor-pointer select-none"
-                    onClick={handleTitleClick}
-                  >
-                    {userProfile ? `${getGreeting()}!` : 'Check-In'}
-                  </h1>
-                  {showResetButton && (
-                    <button
-                      onClick={handleSystemReset}
-                      className="btn-dark-utility !bg-red-700 animate-scale-in flex items-center gap-xs"
-                      title="Clear all cached data and reload"
-                    >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        System Reset
+              <div className="flex items-start gap-sm flex-1 min-w-0">
+                <button
+                  type="button"
+                  className="md:hidden flex items-center justify-center w-10 h-10 shrink-0 rounded-md border border-hairline bg-canvas text-ink"
+                  onClick={() => setSidebarOpen(true)}
+                  aria-label="Open menu"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </button>
+                <div className="flex-1 min-w-0">
+                  <h1 className="font-display text-display-md text-ink">Check-In</h1>
+                  {userProfile && (
+                    <div className="flex items-center gap-sm flex-wrap mt-xs">
+                      {userProfile.role === 'teacher' && userProfile.assignedClassroom && (
+                        <span className="btn-primary !py-xxs !px-sm text-caption-strong inline-flex items-center gap-xxs">
+                          <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                            <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
+                          </svg>
+                          {userProfile.assignedClassroom}
+                        </span>
+                      )}
+                      {userProfile.role === 'admin' && (
+                        <span className="chip-option !py-xxs !px-sm text-fine-print">Admin</span>
+                      )}
+                      <button type="button" onClick={handleChangeProfile} className="text-link text-caption">
+                        Change profile
                       </button>
-                    )}
-                  </div>
-                {userProfile && (
-                  <p className="font-text text-caption text-ink-muted-48 mt-xs">
-                    {userProfile.role === 'teacher' && userProfile.assignedClassroom
-                      ? `${userProfile.assignedClassroom}${userProfile.assignedLocation ? ` · ${userProfile.assignedLocation}` : ''}`
-                      : userProfile.role === 'admin'
-                        ? "Here's what's happening across your campuses"
-                        : 'Live classroom attendance'}
-                  </p>
-                )}
-                {!userProfile && (
-                  <p className="font-text text-body text-ink-muted-48 mt-xs">Set up your dashboard to get started</p>
-                )}
+                    </div>
+                  )}
+                  {!userProfile && (
+                    <p className="font-text text-body text-ink-muted-48 mt-xs">Live classroom attendance</p>
+                  )}
+                </div>
               </div>
 
               <div className="flex items-center gap-sm flex-wrap shrink-0">
-                {userProfile && (
-                  <div className="hidden md:flex items-center gap-xs">
-                    {userProfile.role === 'teacher' && userProfile.assignedClassroom && (
-                      <span className="chip-option !py-xxs !px-sm text-fine-print !border-primary/30 !text-primary !bg-primary/5">
-                        {userProfile.assignedClassroom}
-                      </span>
-                    )}
-                    <button type="button" onClick={handleChangeProfile} className="text-link text-caption">
-                      Change profile
-                    </button>
-                  </div>
-                )}
                 {mode && (
-                  <span className="chip-option !py-xxs !px-sm text-fine-print">
+                  <span className="chip-option !py-xxs !px-sm text-fine-print md:hidden">
                     {mode === 'mock' ? 'Mock' : 'Live'}
                   </span>
                 )}
@@ -1603,82 +1594,23 @@ export default function Home() {
                   {refreshMode === 'service' ? 'Service time' : 'Off-hours'}
                 </span>
                 <div className="flex items-center gap-xs font-text text-caption text-ink-muted-80">
-                    {loading && checkIns.length > 0 && (
-                      <svg
-                        className="w-4 h-4 animate-spin text-ink-muted-48"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        ></circle>
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                        ></path>
-                      </svg>
-                    )}
+                  {loading && checkIns.length > 0 && (
+                    <svg className="w-4 h-4 animate-spin text-ink-muted-48" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                  )}
                   <span className="font-text text-caption-strong">{formatLastUpdated()}</span>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="px-md sm:px-lg pb-xl">
+          <div className="px-md sm:px-lg pb-xl flex-1">
 
           {/* Admin Tabs and Content */}
           {userProfile?.role === 'admin' ? (
             <>
-              {/* Tab Navigation */}
-              <div className="mb-md">
-                <nav className="admin-tab-nav">
-                    <button
-                      type="button"
-                      onClick={() => setActiveAdminTab('overview')}
-                      className={`flex items-center gap-xs px-md py-xs rounded-pill font-text text-caption transition-all active:scale-[0.98] ${
-                        activeAdminTab === 'overview'
-                          ? 'bg-primary text-on-primary'
-                          : 'text-ink-muted-80 hover:bg-canvas-parchment'
-                      }`}
-                    >
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                      </svg>
-                      Overview
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setActiveAdminTab('checkins')}
-                      className={`flex items-center gap-xs px-md py-xs rounded-pill font-text text-caption transition-all active:scale-[0.98] ${
-                        activeAdminTab === 'checkins'
-                          ? 'bg-primary text-on-primary'
-                          : 'text-ink-muted-80 hover:bg-canvas-parchment'
-                      }`}
-                    >
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                      </svg>
-                      Check-Ins
-                      {checkIns.length > 0 && (
-                        <span className={`ml-xs px-sm py-xxs rounded-pill font-text text-fine-print ${
-                          activeAdminTab === 'checkins'
-                            ? 'bg-white/20'
-                            : 'bg-canvas-parchment text-primary'
-                        }`}>
-                          {checkIns.filter(c => !c.checkedOut).length}
-                        </span>
-                      )}
-                    </button>
-                </nav>
-              </div>
-
-              {/* Tab Content */}
               {activeAdminTab === 'overview' ? (
                 // Overview Tab - AdminStats
                 <AdminStats 
@@ -2043,7 +1975,6 @@ export default function Home() {
               </ul>
             </div>
           </footer> */}
-          </div>
           </div>
         </div>
       </main>
